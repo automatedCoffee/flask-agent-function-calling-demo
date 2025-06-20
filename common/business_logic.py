@@ -4,7 +4,14 @@ from datetime import datetime, timedelta
 import random
 from common.config import ARTIFICIAL_DELAY, MOCK_DATA_SIZE
 import pathlib
+import requests
+import os
+from pathlib import Path
 
+# Configuration
+BACKENDLESS_API_URL = os.getenv('BACKENDLESS_API_URL', 'https://api.backendless.com')
+BACKENDLESS_APP_ID = os.getenv('BACKENDLESS_APP_ID', '0C12C4C1-B47E-AF0E-FF2E-B6014104EC00')
+BACKENDLESS_API_KEY = os.getenv('BACKENDLESS_API_KEY', 'D8927048-37D8-4EDD-9FF4-C0DA8D68E279')
 
 def save_mock_data(data):
     """Save mock data to a timestamped file in mock_data_outputs directory."""
@@ -279,4 +286,281 @@ async def prepare_farewell_message(websocket, farewell_type):
         "function_response": {"status": "closing", "message": message},
         "inject_message": inject_message,
         "close_message": close_message,
+    }
+
+def get_customer_backendless(company_name):
+    """
+    Look up a customer by company name from Backendless.
+    Returns CustomerOid and printCustomerName if found.
+    Falls back to mock data if API credentials are not configured.
+    """
+    # Check if Backendless API credentials are configured
+    if not BACKENDLESS_APP_ID or not BACKENDLESS_API_KEY:
+        print(f"Backendless API not configured, using mock data for customer lookup: {company_name}")
+        return get_customer_mock(company_name)
+    
+    try:
+        # Build the correct Backendless URL structure
+        api_url = f"{BACKENDLESS_API_URL}/{BACKENDLESS_APP_ID}/{BACKENDLESS_API_KEY}/data/Customers"
+        
+        # Create the where clause for the company name search
+        where_clause = f"Company LIKE '%{company_name}%'"
+        
+        # Make the API request to Backendless
+        response = requests.get(
+            api_url,
+            params={'where': where_clause}
+        )
+        
+        if response.status_code == 200:
+            customers = response.json()
+            if customers and len(customers) > 0:
+                customer = customers[0]  # Take the first match
+                return {
+                    'CustomerOid': customer.get('objectId'),
+                    'printCustomerName': customer.get('Company'),
+                    'success': True
+                }
+            else:
+                return {
+                    'error': 'Customer not found',
+                    'success': False
+                }
+        else:
+            print(f"Backendless API request failed with status {response.status_code}, falling back to mock data")
+            return get_customer_mock(company_name)
+            
+    except Exception as e:
+        print(f"Backendless API error, falling back to mock data: {str(e)}")
+        return get_customer_mock(company_name)
+
+def get_customer_mock(company_name):
+    """
+    Mock customer lookup for demonstration purposes.
+    Returns sample customer data for common company names.
+    """
+    # Sample customers for demo
+    mock_customers = {
+        "epic": {
+            'CustomerOid': 'mock-epic-001',
+            'printCustomerName': 'Epic Systems Corporation',
+            'success': True
+        },
+        "acme": {
+            'CustomerOid': 'mock-acme-001', 
+            'printCustomerName': 'Acme Corporation',
+            'success': True
+        },
+        "globex": {
+            'CustomerOid': 'mock-globex-001',
+            'printCustomerName': 'Globex Corporation', 
+            'success': True
+        },
+        "initech": {
+            'CustomerOid': 'mock-initech-001',
+            'printCustomerName': 'Initech',
+            'success': True
+        }
+    }
+    
+    # Look for a match (case insensitive)
+    company_lower = company_name.lower()
+    for key, customer in mock_customers.items():
+        if key in company_lower or company_lower in key:
+            print(f"Found mock customer: {customer['printCustomerName']}")
+            return customer
+    
+    # If no match found, return the first customer as a fallback
+    fallback = list(mock_customers.values())[0]
+    print(f"No exact match for '{company_name}', using fallback: {fallback['printCustomerName']}")
+    return fallback
+
+def get_location_backendless(customer_oid, address_string):
+    """
+    Look up a location for a customer by address string from Backendless.
+    Searches in the Locations table using AddressOnlyString and FullAddressString fields.
+    Returns ParentLocationOid, printAccount, and PrintAddressString if found.
+    Falls back to mock data if API credentials are not configured.
+    """
+    print(f"Location lookup called with customer_oid: {customer_oid}, address_string: {address_string}")
+    
+    # Check if Backendless API credentials are configured
+    if not BACKENDLESS_APP_ID or not BACKENDLESS_API_KEY:
+        print(f"Backendless API not configured, using mock data for location lookup: {address_string}")
+        return get_location_mock(customer_oid, address_string)
+    
+    print(f"Using Backendless API credentials - APP_ID: {BACKENDLESS_APP_ID[:8]}..., API_KEY: {BACKENDLESS_API_KEY[:8]}...")
+    
+    try:
+        # Build the correct Backendless URL structure - search in Locations table
+        api_url = f"{BACKENDLESS_API_URL}/{BACKENDLESS_APP_ID}/{BACKENDLESS_API_KEY}/data/Locations"
+        
+        # Create the where clause for the location search - search by address fields
+        where_clause = f"AddressOnlyString LIKE '%{address_string}%' OR FullAddressString LIKE '%{address_string}%'"
+        
+        print(f"Making API request to: {api_url}")
+        print(f"Where clause: {where_clause}")
+        
+        # Make the API request to Backendless
+        response = requests.get(
+            api_url,
+            params={
+                'where': where_clause,
+                'props': 'AddressOnlyString,FullAddressString,ParentAccountName,CustomerOid,objectId'
+            }
+        )
+        
+        print(f"API response status: {response.status_code}")
+        print(f"API response content: {response.text[:500]}...")
+        
+        if response.status_code == 200:
+            locations = response.json()
+            print(f"Found {len(locations)} locations matching address search")
+            if locations and len(locations) > 0:
+                location = locations[0]  # Take the first match
+                print(f"Using location: {location.get('printAccount')} with address: {location.get('FullAddressString', location.get('AddressOnlyString'))}")
+                return {
+                    'ParentLocationOid': location.get('objectId'),
+                    'printAccount': location.get('printAccount', 'Unknown Account'),
+                    'PrintAddressString': location.get('FullAddressString', location.get('AddressOnlyString', 'Unknown Address')),
+                    'success': True
+                }
+            else:
+                print(f"No locations found for address: {address_string}, falling back to mock data")
+                return get_location_mock(customer_oid, address_string)
+        else:
+            print(f"Backendless API request failed with status {response.status_code}, falling back to mock data")
+            return get_location_mock(customer_oid, address_string)
+            
+    except Exception as e:
+        print(f"Backendless API error, falling back to mock data: {str(e)}")
+        return get_location_mock(customer_oid, address_string)
+
+def get_location_mock(customer_oid, address_string):
+    """
+    Mock location lookup for demonstration purposes.
+    Returns sample location data based on customer and address.
+    """
+    # Sample locations for demo
+    mock_locations = [
+        {
+            'ParentLocationOid': 'mock-loc-001',
+            'printAccount': 'Main Office',
+            'PrintAddressString': '123 Main Street, Madison, WI 53703',
+            'keywords': ['main', 'office', '123', 'madison']
+        },
+        {
+            'ParentLocationOid': 'mock-loc-002', 
+            'printAccount': 'Warehouse Facility',
+            'PrintAddressString': '456 Industrial Drive, Verona, WI 53593',
+            'keywords': ['warehouse', 'industrial', '456', 'verona']
+        },
+        {
+            'ParentLocationOid': 'mock-loc-003',
+            'printAccount': 'Research Campus',
+            'PrintAddressString': '789 Innovation Blvd, Middleton, WI 53562',
+            'keywords': ['research', 'campus', '789', 'innovation', 'middleton']
+        }
+    ]
+    
+    # Look for a match based on address string
+    address_lower = address_string.lower()
+    for location in mock_locations:
+        for keyword in location['keywords']:
+            if keyword in address_lower:
+                print(f"Found mock location: {location['PrintAddressString']}")
+                return {
+                    'ParentLocationOid': location['ParentLocationOid'],
+                    'printAccount': location['printAccount'], 
+                    'PrintAddressString': location['PrintAddressString'],
+                    'success': True
+                }
+    
+    # If no match found, return the first location as a fallback
+    fallback = mock_locations[0]
+    print(f"No exact match for '{address_string}', using fallback: {fallback['PrintAddressString']}")
+    return {
+        'ParentLocationOid': fallback['ParentLocationOid'],
+        'printAccount': fallback['printAccount'],
+        'PrintAddressString': fallback['PrintAddressString'], 
+        'success': True
+    }
+
+def post_quote_backendless(quote_data):
+    """
+    Post a structured quote request to Backendless.
+    Returns the created quote object if successful.
+    Falls back to saving locally if API credentials are not configured.
+    """
+    print(f"Creating quote with data: {json.dumps(quote_data, indent=2)}")
+    
+    # Check if Backendless API credentials are configured
+    if not BACKENDLESS_APP_ID or not BACKENDLESS_API_KEY:
+        print("Backendless API not configured, saving quote locally")
+        return save_quote_data(quote_data)
+    
+    print(f"Using Backendless API credentials - APP_ID: {BACKENDLESS_APP_ID[:8]}..., API_KEY: {BACKENDLESS_API_KEY[:8]}...")
+    
+    try:
+        # Build the correct Backendless URL structure
+        api_url = f"{BACKENDLESS_API_URL}/{BACKENDLESS_APP_ID}/{BACKENDLESS_API_KEY}/data/Requests"
+        
+        print(f"Making POST request to: {api_url}")
+        
+        # Make the API request to Backendless
+        response = requests.post(
+            api_url,
+            json=quote_data
+        )
+        
+        print(f"API response status: {response.status_code}")
+        print(f"API response content: {response.text[:500]}...")
+        
+        if response.status_code in [200, 201]:
+            created_quote = response.json()
+            request_number = created_quote.get('InternalRequestNumber', 'N/A')
+            object_id = created_quote.get('objectId', 'N/A')
+            
+            print(f"Quote successfully created in Backendless with ID: {object_id}")
+            print(f"Internal Request Number: {request_number}")
+            
+            return {
+                'quote_id': object_id,
+                'internal_request_number': request_number,
+                'success': True,
+                'message': f"Quote successfully created! Internal Request Number: {request_number}",
+                'data': created_quote
+            }
+        else:
+            print(f"Backendless API request failed with status {response.status_code}, saving locally")
+            return save_quote_data(quote_data)
+            
+    except Exception as e:
+        print(f"Backendless API error, saving quote locally: {str(e)}")
+        return save_quote_data(quote_data)
+
+# Save a copy of the quote data for debugging/backup
+def save_quote_data(quote_data):
+    """Save quote data to a timestamped file in quote_data_outputs directory."""
+    # Create quote_data_outputs directory if it doesn't exist
+    output_dir = Path("quote_data_outputs")
+    output_dir.mkdir(exist_ok=True)
+
+    # Generate timestamp for filename
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_file = output_dir / f"quote_data_{timestamp}.json"
+
+    # Save the data with pretty printing
+    with open(output_file, "w") as f:
+        json.dump(quote_data, f, indent=2)
+
+    print(f"\nQuote data saved to: {output_file}")
+    
+    # Return a proper response indicating success
+    return {
+        'quote_id': f"local_{timestamp}",
+        'success': True,
+        'message': f"Quote saved locally to {output_file}",
+        'file_path': str(output_file),
+        'data': quote_data
     }

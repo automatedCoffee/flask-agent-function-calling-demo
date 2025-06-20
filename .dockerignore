@@ -1,0 +1,33 @@
+# Version control
+.git
+.gitignore
+.gitattributes
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+.env
+*.egg-info/
+dist/
+build/
+
+# Development
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Project specific
+quote_data_outputs/
+mock_data_outputs/
+*.log
+.DS_Store
+README.md
+CONTRIBUTING.md
+LICENSE
+tests/ 

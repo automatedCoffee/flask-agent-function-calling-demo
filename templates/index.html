@@ -7,23 +7,10 @@
     <script src="{{ url_for('static', filename='syncscroll.js') }}"></script>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
-<body>
-    <!-- Industry Selection Popup -->
-    <div id="industryPopup" class="popup-overlay">
-        <div class="popup-content">
-            <h3>Select Agent Industry</h3>
-            <div id="industryList" class="industry-list"></div>
-            <div class="popup-buttons">
-                <button id="cancelIndustry" class="popup-button">Cancel</button>
-            </div>
-        </div>
-    </div>
-    
+<body>    
     <div class="main-container">
         <div class="sidebar">
             <button id="startButton" class="mic-button">Start Voice Agent</button>
-            <div id="currentIndustryDisplay" class="current-industry">Industry: <span>Tech Support</span></div>
-            <button id="industryButton" class="industry-button">Change Industry</button>
             <div id="status" class="status">Microphone: Not active</div>
             <div class="audio-controls">
                 <div class="device-select">
@@ -31,8 +18,16 @@
                     <select id="voiceModel"></select>
                 </div>
                 <div class="device-select">
-                    <label for="inputDevice">Input Device:</label>
+                    <label for="inputDevice">Input Device (Microphone):</label>
                     <select id="inputDevice"></select>
+                </div>
+                <div class="device-select">
+                    <label for="outputDevice">Output Device (Speaker):</label>
+                    <select id="outputDevice"></select>
+                </div>
+                <div class="audio-tip">
+                    💡 <strong>Tip:</strong> Use different devices for input and output to prevent audio feedback (echo).
+                    <br>Consider using headphones or separate microphone and speakers.
                 </div>
             </div>
             <div class="controls">
@@ -44,48 +39,6 @@
                     <input type="checkbox" id="darkMode" checked>
                     <span class="toggle-label">Dark Mode</span>
                 </label>
-            </div>
-            <div class="sample-data">
-                <h3>Sample Customer Data</h3>
-                <div class="sample-data-content">
-                    {% for customer in sample_data %}
-                    <div class="customer-card collapsed">
-                        <div class="customer-header">
-                            <div class="customer-info">
-                                <div><strong>{{ customer.Customer }}</strong></div>
-                                <div>ID: {{ customer.ID }}</div>
-                            </div>
-                            <div class="expand-icon">▼</div>
-                        </div>
-                        <div class="customer-details">
-                            <div class="customer-contact">
-                                <div>Phone: {{ customer.Phone }}</div>
-                                <div>Email: {{ customer.Email }}</div>
-                            </div>
-                            {% if customer.Appointments %}
-                            <div class="customer-appointments">
-                                <strong>Appointments:</strong>
-                                {% for apt in customer.Appointments %}
-                                <div>{{ apt.Service }} - {{ apt.Date }} ({{ apt.Status }})</div>
-                                {% endfor %}
-                            </div>
-                            {% endif %}
-                            {% if customer.Orders %}
-                            <div class="customer-orders">
-                                <strong>Orders:</strong>
-                                {% for order in customer.Orders %}
-                                <div>{{ order.ID }}</div>
-                                <div>- Items: {{ order['# Items'] }}</div>
-                                <div>- Total: {{ order.Total }}</div>
-                                <div>- Status: {{ order.Status }}</div>
-                                <div>- Date: {{ order.Date }}</div>
-                                {% endfor %}
-                            </div>
-                            {% endif %}
-                        </div>
-                    </div>
-                    {% endfor %}
-                </div>
             </div>
         </div>
         <div class="columns-container">
@@ -103,18 +56,14 @@
     <script>
         const socket = io();
         const startButton = document.getElementById('startButton');
-        const industryButton = document.getElementById('industryButton');
         const voiceModelSelect = document.getElementById('voiceModel');
-        const industryPopup = document.getElementById('industryPopup');
-        const industryList = document.getElementById('industryList');
-        const cancelIndustry = document.getElementById('cancelIndustry');
-        const currentIndustryDisplay = document.getElementById('currentIndustryDisplay').querySelector('span');
         const conversationMessages = document.getElementById('conversationMessages');
         const logMessages = document.getElementById('logMessages');
         const statusDiv = document.getElementById('status');
         const showLogsToggle = document.getElementById('showLogs');
         const logsColumn = document.getElementById('logs');
         const inputSelect = document.getElementById('inputDevice');
+        const outputSelect = document.getElementById('outputDevice');
         let isActive = false;
         let currentGroup = null;
         let lastMessageTimestamp = null;
@@ -122,7 +71,6 @@
         const messageHeights = new Map(); // Store heights by counter
         const messageOrder = []; // Keep track of message order
         let currentIndustry = 'tech_support'; // Default industry
-        let currentIndustryName = 'Tech Support'; // Default industry name
         let currentVoiceModel = 'aura-2-thalia-en'; // Default voice model
         let currentVoiceName = ''; // Will be populated from the model name
 
@@ -135,12 +83,18 @@ async function loadAudioDevices() {
         
         // Clear existing options
         inputSelect.innerHTML = '';
+        outputSelect.innerHTML = '';
         
-        // First add a "Default" option
-        const defaultOption = document.createElement('option');
-        defaultOption.value = "";
-        defaultOption.text = "Default (System)";
-        inputSelect.appendChild(defaultOption);
+        // First add a "Default" option for both
+        const defaultInputOption = document.createElement('option');
+        defaultInputOption.value = "";
+        defaultInputOption.text = "Default (System)";
+        inputSelect.appendChild(defaultInputOption);
+        
+        const defaultOutputOption = document.createElement('option');
+        defaultOutputOption.value = "";
+        defaultOutputOption.text = "Default (System)";
+        outputSelect.appendChild(defaultOutputOption);
         
         // Fetch actual PyAudio devices from the backend
         const response = await fetch('/audio-devices');
@@ -149,24 +103,39 @@ async function loadAudioDevices() {
         }
         
         const data = await response.json();
-        console.log('Backend audio devices:', data.devices);
+        console.log('Backend audio devices:', data);
         
-        // Add the backend PyAudio devices
-        if (data.devices && data.devices.length > 0) {
-            data.devices.forEach(device => {
-                const option = document.createElement('option');
-                option.value = device.index.toString();
-                option.text = `${device.name} (Index: ${device.index})`;
-                inputSelect.appendChild(option);
+        // Add the backend PyAudio input devices
+        if (data.input && data.input.length > 0) {
+            data.input.forEach(device => {
+                const inputOption = document.createElement('option');
+                inputOption.value = device.index.toString();
+                inputOption.text = `${device.name} (Index: ${device.index})`;
+                inputSelect.appendChild(inputOption);
                 
                 // If this is pipewire, select it by default
                 if (device.name.toLowerCase().includes('pipewire')) {
-                    option.selected = true;
+                    inputOption.selected = true;
                 }
             });
         }
         
-        console.log(`Found ${data.devices.length} input devices from backend`);
+        // Add the backend PyAudio output devices
+        if (data.output && data.output.length > 0) {
+            data.output.forEach(device => {
+                const outputOption = document.createElement('option');
+                outputOption.value = device.index.toString();
+                outputOption.text = `${device.name} (Index: ${device.index})`;
+                outputSelect.appendChild(outputOption);
+                
+                // Select a different device for output by default if available
+                if (data.output.length > 1 && device.index !== (data.input[0]?.index || 0)) {
+                    outputOption.selected = true;
+                }
+            });
+        }
+        
+        console.log(`Found ${data.input?.length || 0} input devices and ${data.output?.length || 0} output devices from backend`);
     } catch (err) {
         console.error('Error loading audio devices:', err);
         statusDiv.textContent = 'Error: Could not access audio devices';
@@ -266,83 +235,6 @@ async function loadAudioDevices() {
             currentVoiceName = selectedOption.dataset.voiceName;
         });
         
-        // Initialize industry display
-        function initializeIndustryDisplay() {
-            fetch('/industries')
-                .then(response => response.json())
-                .then(industries => {
-                    // Find the display name for the current industry
-                    if (industries[currentIndustry]) {
-                        currentIndustryName = industries[currentIndustry];
-                        currentIndustryDisplay.textContent = currentIndustryName;
-                    }
-                })
-                .catch(error => console.error('Error initializing industry display:', error));
-        }
-        
-        // Initialize industry display on page load
-        initializeIndustryDisplay();
-        
-        // Load available industries
-        function loadIndustries() {
-            fetch('/industries')
-                .then(response => response.json())
-                .then(industries => {
-                    industryList.innerHTML = '';
-                    Object.entries(industries).forEach(([key, name]) => {
-                        const item = document.createElement('div');
-                        item.className = 'industry-item';
-                        if (key === currentIndustry) {
-                            item.classList.add('selected');
-                        }
-                        item.dataset.industry = key;
-                        item.textContent = name;
-                        item.addEventListener('click', () => selectIndustry(key, name));
-                        industryList.appendChild(item);
-                    });
-                })
-                .catch(error => console.error('Error loading industries:', error));
-        }
-        
-        // Select industry and close popup
-        function selectIndustry(industry, name) {
-            currentIndustry = industry;
-            currentIndustryName = name;
-            currentIndustryDisplay.textContent = name;
-            closeIndustryPopup();
-            
-            // If agent is active, stop it and restart with new industry
-            if (isActive) {
-                socket.emit('stop_voice_agent');
-                startButton.textContent = 'Start Voice Agent';
-                statusDiv.textContent = 'Microphone: Not active';
-                isActive = false;
-                
-                // Add message about industry change
-                addConversationMessage({
-                    role: 'system',
-                    content: `Industry changed to ${name}. Click Start Voice Agent to continue.`
-                });
-            }
-        }
-        
-        // Show industry popup
-        function showIndustryPopup() {
-            loadIndustries();
-            industryPopup.style.display = 'flex';
-        }
-        
-        // Close industry popup
-        function closeIndustryPopup() {
-            industryPopup.style.display = 'none';
-        }
-        
-        // Industry button click handler
-        industryButton.addEventListener('click', showIndustryPopup);
-        
-        // Cancel button click handler
-        cancelIndustry.addEventListener('click', closeIndustryPopup);
-
         // Send selected devices to server when starting
         startButton.addEventListener('click', async () => {
             if (!isActive) {
@@ -354,6 +246,7 @@ async function loadAudioDevices() {
 
                 socket.emit('start_voice_agent', {
                     inputDeviceId: inputSelect.value,
+                    outputDeviceId: outputSelect.value,
                     industry: currentIndustry,
                     voiceModel: currentVoiceModel,
                     voiceName: currentVoiceName
@@ -650,30 +543,6 @@ async function loadAudioDevices() {
                 darkModeToggle.checked = isDarkMode;
                 document.body.classList.toggle('dark-mode', isDarkMode);
             }
-        });
-
-        function toggleCustomer(card) {
-            const wasCollapsed = card.classList.contains('collapsed');
-            
-            // First collapse all cards
-            document.querySelectorAll('.customer-card').forEach(otherCard => {
-                otherCard.classList.add('collapsed');
-            });
-            
-            // Then expand the clicked card if it was collapsed
-            if (wasCollapsed) {
-                card.classList.remove('collapsed');
-            }
-        }
-
-        // Initialize all cards as collapsed
-        document.addEventListener('DOMContentLoaded', () => {
-            const cards = document.querySelectorAll('.customer-card');
-            cards.forEach(card => {
-                card.classList.add('collapsed');
-                // Add click handler to entire card
-                card.addEventListener('click', () => toggleCustomer(card));
-            });
         });
     </script>
 </body>

@@ -1,0 +1,30 @@
+{
+  "CustomerOid": "9493B230-DDA6-4EE0-816E-4DEEE9CE012C",
+  "JobName": "Power wash job",
+  "ParentLocationOid": "45747314-ACCD-437C-BFB6-6EABAF8C17E8",
+  "PrintAddressString": "Meadowlands Racetrack / 1 Racetrack Drive East Rutherford, New Jersey",
+  "Status": "PRE-ESTIMATE",
+  "pre_quote_data": {
+    "notes": "Scope of work should be power wash all patio areas, railings, sidewalks, and fence surfaces.",
+    "selected_vendor": "Super Cool Vendor",
+    "total_labor_to_customer": {
+      "hours": 16,
+      "men": 4,
+      "rate": 25,
+      "total": 400
+    },
+    "total_material_to_customer": 0,
+    "total_payout_to_vendor": 320,
+    "total_quote_to_customer": 400,
+    "vendor_labor": {
+      "hours": 16,
+      "men": 4,
+      "rate": 20,
+      "total": 320
+    },
+    "vendor_materials_or_other_costs": 0
+  },
+  "printAccount": "Unknown Account",
+  "printCustomerName": "Epic Construction",
+  "scheduleddate": "2025-06-25"
+}

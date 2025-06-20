@@ -148,6 +148,8 @@ body:not(.dark-mode) .current-industry {
     transform: scale(0.95);
 }
 
+
+
 .mic-button:hover {
     background-color: #3d918e;
     transform: scale(1.05);
@@ -532,6 +534,22 @@ body.dark-mode .device-select select {
 body.dark-mode .device-select select option {
     background-color: var(--item-bg-dark);
     color: var(--text-color-dark);
+}
+
+.audio-tip {
+    background-color: #e8f4fd;
+    border: 1px solid #b3d7f0;
+    border-radius: 5px;
+    padding: 8px;
+    font-size: 12px;
+    line-height: 1.4;
+    margin-top: 5px;
+}
+
+body.dark-mode .audio-tip {
+    background-color: #1a2f3a;
+    border-color: #2d4a5a;
+    color: #a8c8d8;
 }
 
 /* Industry Selection Popup Styles */

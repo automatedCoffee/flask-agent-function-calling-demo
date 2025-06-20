@@ -1,283 +1,170 @@
 import json
-from datetime import datetime, timedelta
-import asyncio
+import requests
+
 from .business_logic import (
-    get_customer,
-    get_customer_appointments,
-    get_customer_orders,
-    schedule_appointment,
-    get_available_appointment_slots,
-    prepare_agent_filler_message,
-    prepare_farewell_message,
+    get_customer_backendless,
+    get_location_backendless,
+    post_quote_backendless
 )
 
-
-async def find_customer(params):
-    """Look up a customer by phone, email, or ID."""
-    phone = params.get("phone")
-    email = params.get("email")
-    customer_id = params.get("customer_id")
-
-    result = await get_customer(phone=phone, email=email, customer_id=customer_id)
+def get_customer(params):
+    """Look up a customer by company name from Backendless."""
+    company_name = params.get("company_name")
+    if not company_name:
+        return {"error": "Company name is required."}
+    
+    result = get_customer_backendless(company_name)
     return result
 
-
-async def get_appointments(params):
-    """Get appointments for a customer."""
-    customer_id = params.get("customer_id")
-    if not customer_id:
-        return {"error": "customer_id is required"}
-
-    result = await get_customer_appointments(customer_id)
+def get_location(params):
+    """Look up a location for a customer by address string from Backendless."""
+    customer_oid = params.get("customer_oid")
+    address_string = params.get("address_string")
+    if not customer_oid or not address_string:
+        return {"error": "Customer OID and address string are required."}
+    
+    result = get_location_backendless(customer_oid, address_string)
     return result
 
-
-async def get_orders(params):
-    """Get orders for a customer."""
-    customer_id = params.get("customer_id")
-    if not customer_id:
-        return {"error": "customer_id is required"}
-
-    result = await get_customer_orders(customer_id)
+def post_quote(params):
+    """Post a structured quote request to Backendless."""
+    # Extract individual parameters instead of expecting a nested quote_data object
+    status = params.get("status", "PRE-ESTIMATE")
+    print_customer_name = params.get("print_customer_name")
+    customer_oid = params.get("customer_oid")
+    print_account = params.get("print_account")
+    print_address_string = params.get("print_address_string")
+    scheduled_date = params.get("scheduled_date")
+    requestor = params.get("requestor")
+    pre_quote_data = params.get("pre_quote_data")
+    job_name = params.get("job_name")
+    prelim_quote = params.get("prelim_quote")
+    
+    # Validate required fields
+    required_fields = {
+        "print_customer_name": print_customer_name,
+        "customer_oid": customer_oid,
+        "print_account": print_account,
+        "print_address_string": print_address_string,
+        "scheduled_date": scheduled_date,
+        "requestor": requestor,
+        "job_name": job_name
+    }
+    
+    missing_fields = [field for field, value in required_fields.items() if not value]
+    if missing_fields:
+        return {"error": f"Missing required fields: {', '.join(missing_fields)}"}
+    
+    # Structure the payload according to the user's specifications
+    quote_data = {
+        "Status": status,
+        "printCustomerName": print_customer_name,
+        "CustomerOid": customer_oid,
+        "printAccount": print_account,
+        "PrintAddressString": print_address_string,
+        "scheduleddate": scheduled_date,
+        "Requestor": requestor,
+        "pre_quote_data": pre_quote_data or "No additional details provided",
+        "JobName": job_name,
+        "prelim_quote": prelim_quote or "Quote details to be determined"
+    }
+    
+    result = post_quote_backendless(quote_data)
     return result
-
-
-async def create_appointment(params):
-    """Schedule a new appointment."""
-    customer_id = params.get("customer_id")
-    date = params.get("date")
-    service = params.get("service")
-
-    if not all([customer_id, date, service]):
-        return {"error": "customer_id, date, and service are required"}
-
-    result = await schedule_appointment(customer_id, date, service)
-    return result
-
-
-async def check_availability(params):
-    """Check available appointment slots."""
-    start_date = params.get("start_date")
-    end_date = params.get(
-        "end_date", (datetime.fromisoformat(start_date) + timedelta(days=7)).isoformat()
-    )
-
-    if not start_date:
-        return {"error": "start_date is required"}
-
-    result = await get_available_appointment_slots(start_date, end_date)
-    return result
-
-
-async def agent_filler(websocket, params):
-    """
-    Handle agent filler messages while maintaining proper function call protocol.
-    """
-    result = await prepare_agent_filler_message(websocket, **params)
-    return result
-
-
-async def end_call(websocket, params):
-    """
-    End the conversation and close the connection.
-    """
-    farewell_type = params.get("farewell_type", "general")
-    result = await prepare_farewell_message(websocket, farewell_type)
-    return result
-
 
 # Function definitions that will be sent to the Voice Agent API
 FUNCTION_DEFINITIONS = [
     {
-        "name": "agent_filler",
-        "description": """Use this function to provide natural conversational filler before looking up information.
-        ALWAYS call this function first with message_type='lookup' when you're about to look up customer information.
-        After calling this function, you MUST immediately follow up with the appropriate lookup function (e.g., find_customer).""",
+        "name": "get_customer",
+        "description": "Retrieve customer information from the ERP system based on the company name. Use this function to get the CustomerOid and printCustomerName for a quote.",
         "parameters": {
             "type": "object",
             "properties": {
-                "message_type": {
+                "company_name": {
                     "type": "string",
-                    "description": "Type of filler message to use. Use 'lookup' when about to search for information.",
-                    "enum": ["lookup", "general"],
+                    "description": "The company name of the customer to look up. Example: 'Acme Corp'"
                 }
             },
-            "required": ["message_type"],
-        },
+            "required": ["company_name"]
+        }
     },
     {
-        "name": "find_customer",
-        "description": """Look up a customer's account information. Use context clues to determine what type of identifier the user is providing:
-
-        Customer ID formats:
-        - Numbers only (e.g., '169', '42') → Format as 'CUST0169', 'CUST0042'
-        - With prefix (e.g., 'CUST169', 'customer 42') → Format as 'CUST0169', 'CUST0042'
-        
-        Phone number recognition:
-        - Standard format: '555-123-4567' → Format as '+15551234567'
-        - With area code: '(555) 123-4567' → Format as '+15551234567'
-        - Spoken naturally: 'five five five, one two three, four five six seven' → Format as '+15551234567'
-        - International: '+1 555-123-4567' → Use as is
-        - Always add +1 country code if not provided
-        
-        Email address recognition:
-        - Spoken naturally: 'my email is john dot smith at example dot com' → Format as 'john.smith@example.com'
-        - With domain: 'john@example.com' → Use as is
-        - Spelled out: 'j o h n at example dot com' → Format as 'john@example.com'""",
+        "name": "get_location",
+        "description": "Retrieve a specific job location for a customer from the ERP system based on their CustomerOid and a partial address string. Use this function to get ParentLocationOid, printAccount, and PrintAddressString.",
         "parameters": {
             "type": "object",
             "properties": {
-                "customer_id": {
+                "customer_oid": {
                     "type": "string",
-                    "description": "Customer's ID. Format as CUSTXXXX where XXXX is the number padded to 4 digits with leading zeros. Example: if user says '42', pass 'CUST0042'",
+                    "description": "The unique identifier (objectId) of the customer, obtained from the get_customer function."
                 },
-                "phone": {
+                "address_string": {
                     "type": "string",
-                    "description": """Phone number with country code. Format as +1XXXXXXXXXX:
-                    - Add +1 if not provided
-                    - Remove any spaces, dashes, or parentheses
-                    - Convert spoken numbers to digits
-                    Example: 'five five five one two three four five six seven' → '+15551234567'""",
-                },
-                "email": {
-                    "type": "string",
-                    "description": """Email address in standard format:
-                    - Convert 'dot' to '.'
-                    - Convert 'at' to '@'
-                    - Remove spaces between spelled out letters
-                    Example: 'j dot smith at example dot com' → 'j.smith@example.com'""",
-                },
-            },
-        },
-    },
-    {
-        "name": "get_appointments",
-        "description": """Retrieve all appointments for a customer. Use this function when:
-        - A customer asks about their upcoming appointments
-        - A customer wants to know their appointment schedule
-        - A customer asks 'When is my next appointment?'
-        
-        Always verify you have the customer's account first using find_customer before checking appointments.""",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "customer_id": {
-                    "type": "string",
-                    "description": "Customer's ID in CUSTXXXX format. Must be obtained from find_customer first.",
+                    "description": "A part of the address string to identify the job location. Example: '123 Main St' or 'Suite 400'"
                 }
             },
-            "required": ["customer_id"],
-        },
+            "required": ["customer_oid", "address_string"]
+        }
     },
     {
-        "name": "get_orders",
-        "description": """Retrieve order history for a customer. Use this function when:
-        - A customer asks about their orders
-        - A customer wants to check order status
-        - A customer asks questions like 'Where is my order?' or 'What did I order?'
-        
-        Always verify you have the customer's account first using find_customer before checking orders.""",
+        "name": "post_quote",
+        "description": "Submit a complete structured quote request to the ERP system. This function should only be called once all required information has been collected from the customer and confirmed. The customer data should come from get_customer function, and location data should come from get_location function. Upon successful creation, the function will return an Internal Request Number that should be shared with the customer for confirmation.",
         "parameters": {
             "type": "object",
             "properties": {
-                "customer_id": {
+                "status": {
                     "type": "string",
-                    "description": "Customer's ID in CUSTXXXX format. Must be obtained from find_customer first.",
+                    "description": "The status of the quote. Default is 'PRE-ESTIMATE'.",
+                    "default": "PRE-ESTIMATE"
+                },
+                "print_customer_name": {
+                    "type": "string",
+                    "description": "The customer company name from get_customer function result (customers.company field)."
+                },
+                "customer_oid": {
+                    "type": "string",
+                    "description": "The customer object ID from get_customer function result (customers.objectId field)."
+                },
+                "print_account": {
+                    "type": "string",
+                    "description": "The account name from get_location function result (locations.ParentAccountName field)."
+                },
+                "print_address_string": {
+                    "type": "string",
+                    "description": "The address string from get_location function result (locations.addressonlystring field)."
+                },
+                "scheduled_date": {
+                    "type": "string",
+                    "description": "The date of service provided by the user (userInput). Format: YYYY-MM-DD or user's preferred format."
+                },
+                "requestor": {
+                    "type": "string",
+                    "description": "The customer job contact name provided by the user (userInput)."
+                },
+                "pre_quote_data": {
+                    "type": "string",
+                    "description": "Scope of work and extra information provided by the user (userInput). Optional field."
+                },
+                "job_name": {
+                    "type": "string",
+                    "description": "The name of the job provided by the user (userInput)."
+                },
+                "prelim_quote": {
+                    "type": "string",
+                    "description": "Free form text field to store quote information provided by the user (userInput). Optional field."
                 }
             },
-            "required": ["customer_id"],
-        },
-    },
-    {
-        "name": "create_appointment",
-        "description": """Schedule a new appointment for a customer. Use this function when:
-        - A customer wants to book a new appointment
-        - A customer asks to schedule a service
-        
-        Before scheduling:
-        1. Verify customer account exists using find_customer
-        2. Check availability using check_availability
-        3. Confirm date/time and service type with customer before booking""",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "customer_id": {
-                    "type": "string",
-                    "description": "Customer's ID in CUSTXXXX format. Must be obtained from find_customer first.",
-                },
-                "date": {
-                    "type": "string",
-                    "description": "Appointment date and time in ISO format (YYYY-MM-DDTHH:MM:SS). Must be a time slot confirmed as available.",
-                },
-                "service": {
-                    "type": "string",
-                    "description": "Type of service requested. Must be one of the following: Consultation, Follow-up, Review, or Planning",
-                    "enum": ["Consultation", "Follow-up", "Review", "Planning"],
-                },
-            },
-            "required": ["customer_id", "date", "service"],
-        },
-    },
-    {
-        "name": "check_availability",
-        "description": """Check available appointment slots within a date range. Use this function when:
-        - A customer wants to know available appointment times
-        - Before scheduling a new appointment
-        - A customer asks 'When can I come in?' or 'What times are available?'
-        
-        After checking availability, present options to the customer in a natural way, like:
-        'I have openings on [date] at [time] or [date] at [time]. Which works better for you?'""",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "start_date": {
-                    "type": "string",
-                    "description": "Start date in ISO format (YYYY-MM-DDTHH:MM:SS). Usually today's date for immediate availability checks.",
-                },
-                "end_date": {
-                    "type": "string",
-                    "description": "End date in ISO format. Optional - defaults to 7 days after start_date. Use for specific date range requests.",
-                },
-            },
-            "required": ["start_date"],
-        },
-    },
-    {
-        "name": "end_call",
-        "description": """End the conversation and close the connection. Call this function when:
-        - User says goodbye, thank you, etc.
-        - User indicates they're done ("that's all I need", "I'm all set", etc.)
-        - User wants to end the conversation
-        
-        Examples of triggers:
-        - "Thank you, bye!"
-        - "That's all I needed, thanks"
-        - "Have a good day"
-        - "Goodbye"
-        - "I'm done"
-        
-        Do not call this function if the user is just saying thanks but continuing the conversation.""",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "farewell_type": {
-                    "type": "string",
-                    "description": "Type of farewell to use in response",
-                    "enum": ["thanks", "general", "help"],
-                }
-            },
-            "required": ["farewell_type"],
-        },
-    },
+            "required": [
+                "print_customer_name", "customer_oid", "print_account", 
+                "print_address_string", "scheduled_date", "requestor", "job_name"
+            ]
+        }
+    }
 ]
 
 # Map function names to their implementations
 FUNCTION_MAP = {
-    "find_customer": find_customer,
-    "get_appointments": get_appointments,
-    "get_orders": get_orders,
-    "create_appointment": create_appointment,
-    "check_availability": check_availability,
-    "agent_filler": agent_filler,
-    "end_call": end_call,
+    "get_customer": get_customer,
+    "get_location": get_location,
+    "post_quote": post_quote,
 }
