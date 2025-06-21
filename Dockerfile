@@ -8,31 +8,20 @@ RUN apt-get update && apt-get install -y \
     pulseaudio \
     alsa-utils \
     libasound2-plugins \
+    libasound2 \
+    libpulse0 \
+    pulseaudio-utils \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Configure virtual audio devices
-RUN mkdir -p /etc/alsa && \
-    echo 'pcm.!default { type null }' > /etc/asound.conf && \
-    echo 'ctl.!default { type null }' >> /etc/asound.conf
+# Create necessary directories
+RUN mkdir -p /var/run/pulse /var/lib/pulse /etc/pulse /etc/alsa
 
-# Configure PulseAudio
-RUN mkdir -p /var/run/pulse /var/lib/pulse /etc/pulse
-RUN adduser --system --home /var/run/pulse pulse
-RUN adduser --system --home /var/run/pulse pulse-access
-RUN usermod -aG pulse-access root
-
-# Create PulseAudio configuration
-RUN echo "default-server = unix:/tmp/pulseaudio.socket" > /etc/pulse/client.conf && \
-    echo "autospawn = no" >> /etc/pulse/client.conf && \
-    echo "daemon-binary = /bin/true" >> /etc/pulse/client.conf && \
-    echo "enable-shm = false" >> /etc/pulse/client.conf
-
-# Configure PulseAudio daemon
-RUN echo "load-module module-null-sink sink_name=dummy sink_properties=device.description=dummy_sink" > /etc/pulse/default.pa && \
-    echo "load-module module-native-protocol-unix auth-anonymous=1 socket=/tmp/pulseaudio.socket" >> /etc/pulse/default.pa && \
-    echo "load-module module-always-sink" >> /etc/pulse/default.pa
+# Configure system user for PulseAudio
+RUN adduser --system --home /var/run/pulse --group pulse && \
+    adduser --system --home /var/run/pulse --group pulse-access && \
+    usermod -aG pulse-access root
 
 # Install Python dependencies
 COPY requirements.txt .
