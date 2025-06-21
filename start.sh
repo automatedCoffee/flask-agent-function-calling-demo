@@ -28,16 +28,16 @@ high-priority = no
 nice-level = -11
 realtime-scheduling = no
 realtime-priority = 5
-allow-module-loading = no
+allow-module-loading = yes
 allow-exit = no
 use-pid-file = no
 EOL
 
 # Create PulseAudio system configuration
 cat > /etc/pulse/system.pa << EOL
+.fail
 load-module module-null-sink sink_name=dummy sink_properties=device.description=dummy_sink
 load-module module-native-protocol-unix auth-anonymous=1 socket=/tmp/pulseaudio.socket
-load-module module-always-sink
 EOL
 
 # Start PulseAudio in the foreground (non-daemonized)

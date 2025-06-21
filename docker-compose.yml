@@ -6,7 +6,7 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "5000:5000"
+      - "127.0.0.1:5000:5000"
     volumes:
       - ./:/app:ro
       - app-data:/app/quote_data_outputs
@@ -34,6 +34,12 @@ services:
       nofile:
         soft: 65536
         hard: 65536
+    networks:
+      - nginx_network
+
+networks:
+  nginx_network:
+    external: true
 
 volumes:
   app-data:

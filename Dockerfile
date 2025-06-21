@@ -21,7 +21,9 @@ RUN mkdir -p /var/run/pulse /var/lib/pulse /etc/pulse /etc/alsa
 # Configure system user for PulseAudio
 RUN adduser --system --home /var/run/pulse --group pulse && \
     adduser --system --home /var/run/pulse --group pulse-access && \
-    usermod -aG pulse-access root
+    usermod -aG pulse-access root && \
+    chown -R pulse:pulse /var/run/pulse /var/lib/pulse && \
+    chmod -R 755 /var/run/pulse /var/lib/pulse
 
 # Install Python dependencies
 COPY requirements.txt .
