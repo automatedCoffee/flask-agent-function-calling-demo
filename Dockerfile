@@ -31,7 +31,8 @@ RUN echo "default-server = unix:/tmp/pulseaudio.socket" > /etc/pulse/client.conf
 
 # Configure PulseAudio daemon
 RUN echo "load-module module-null-sink sink_name=dummy sink_properties=device.description=dummy_sink" > /etc/pulse/default.pa && \
-    echo "load-module module-native-protocol-unix auth-anonymous=1 socket=/tmp/pulseaudio.socket" >> /etc/pulse/default.pa
+    echo "load-module module-native-protocol-unix auth-anonymous=1 socket=/tmp/pulseaudio.socket" >> /etc/pulse/default.pa && \
+    echo "load-module module-always-sink" >> /etc/pulse/default.pa
 
 # Install Python dependencies
 COPY requirements.txt .
@@ -51,11 +52,5 @@ RUN chmod +x /start.sh
 # Use start.sh as entrypoint
 ENTRYPOINT ["/start.sh"]
 
-# Default command (can be overridden in docker-compose.yml)
-CMD ["gunicorn", "--worker-class", "eventlet", "-w", "1", "--bind", "0.0.0.0:5000", "client:app"]
-
-# Development command using Flask's debug server
-CMD ["python", "client.py"]
-
-# Production command using gunicorn (commented out for reference)
-# CMD ["gunicorn", "--worker-class", "eventlet", "-w", "1", "--bind", "0.0.0.0:5000", "client:app"] 
+# Production command using gunicorn
+CMD ["gunicorn", "--worker-class", "eventlet", "-w", "1", "--bind", "0.0.0.0:5000", "client:app"] 
