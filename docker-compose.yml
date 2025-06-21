@@ -11,16 +11,18 @@ services:
       - .:/app
       - /app/venv  # Exclude venv directory from mounting
       - quote_data:/app/quote_data_outputs  # Persist quote data
+      - mock_data:/app/mock_data_outputs    # Persist mock data
       - /tmp/pulseaudio.socket:/tmp/pulseaudio.socket  # Share PulseAudio socket
     environment:
       - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}
       - BACKENDLESS_API_URL=${BACKENDLESS_API_URL}
       - BACKENDLESS_APP_ID=${BACKENDLESS_APP_ID}
       - BACKENDLESS_API_KEY=${BACKENDLESS_API_KEY}
-      - FLASK_ENV=development
+      - FLASK_ENV=production
       - PYTHONUNBUFFERED=1
       - DOCKER_CONTAINER=true
       - PULSE_SERVER=unix:/tmp/pulseaudio.socket
+      - ALSA_CONFIG_PATH=/etc/asound.conf
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/"]
@@ -28,6 +30,11 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
 
 volumes:
-  quote_data:  # Named volume for persisting quote data 
+  quote_data:  # Named volume for persisting quote data
+  mock_data:   # Named volume for persisting mock data 

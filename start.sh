@@ -1,13 +1,19 @@
 #!/bin/bash
 
-# Start PulseAudio in system mode
-pulseaudio --system --disallow-exit --disallow-module-loading --daemonize
+# Start PulseAudio in system mode with our configuration
+pulseaudio --system --disallow-exit --disallow-module-loading --file=/etc/pulse/default.pa --daemonize
 
-# Wait for PulseAudio to start
+# Wait for PulseAudio to start and create socket
 sleep 2
 
-# Load null sink module
-pacmd load-module module-null-sink sink_name=dummy sink_properties=device.description=dummy_sink
+# Verify PulseAudio is running
+if ! pulseaudio --check; then
+    echo "Failed to start PulseAudio"
+    exit 1
+fi
 
-# Start the Flask application
-python client.py 
+# Configure ALSA to use PulseAudio
+export ALSA_CONFIG_PATH=/etc/asound.conf
+
+# Execute the CMD from Dockerfile (passed as arguments to this script)
+exec "$@" 
