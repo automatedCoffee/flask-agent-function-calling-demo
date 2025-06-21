@@ -8,18 +8,11 @@ services:
     ports:
       - "5000:5000"
     volumes:
-      - type: bind
-        source: .
-        target: /app
-      - type: volume
-        source: quote_data
-        target: /app/quote_data_outputs
-      - type: volume
-        source: mock_data
-        target: /app/mock_data_outputs
-      - type: bind
-        source: /tmp/pulseaudio.socket
-        target: /tmp/pulseaudio.socket
+      - ./:/app:ro
+      - app-data:/app/quote_data_outputs
+      - app-mock-data:/app/mock_data_outputs
+    tmpfs:
+      - /tmp
     environment:
       - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}
       - BACKENDLESS_API_URL=${BACKENDLESS_API_URL}
@@ -43,7 +36,5 @@ services:
         hard: 65536
 
 volumes:
-  quote_data:
-    driver: local
-  mock_data:
-    driver: local 
+  app-data:
+  app-mock-data: 
