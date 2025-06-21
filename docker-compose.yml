@@ -5,8 +5,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    ports:
-      - "5000:5000"
+    network_mode: "host"
     volumes:
       - ./:/app:ro
       - app-data:/app/quote_data_outputs
