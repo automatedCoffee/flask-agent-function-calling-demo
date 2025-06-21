@@ -34,12 +34,6 @@ services:
       nofile:
         soft: 65536
         hard: 65536
-    networks:
-      - nginx_network
-
-networks:
-  nginx_network:
-    external: true
 
 volumes:
   app-data:
