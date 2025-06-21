@@ -8,11 +8,18 @@ services:
     ports:
       - "5000:5000"
     volumes:
-      - .:/app
-      - /app/venv  # Exclude venv directory from mounting
-      - quote_data:/app/quote_data_outputs  # Persist quote data
-      - mock_data:/app/mock_data_outputs    # Persist mock data
-      - /tmp/pulseaudio.socket:/tmp/pulseaudio.socket  # Share PulseAudio socket
+      - type: bind
+        source: .
+        target: /app
+      - type: volume
+        source: quote_data
+        target: /app/quote_data_outputs
+      - type: volume
+        source: mock_data
+        target: /app/mock_data_outputs
+      - type: bind
+        source: /tmp/pulseaudio.socket
+        target: /tmp/pulseaudio.socket
     environment:
       - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}
       - BACKENDLESS_API_URL=${BACKENDLESS_API_URL}
@@ -36,5 +43,7 @@ services:
         hard: 65536
 
 volumes:
-  quote_data:  # Named volume for persisting quote data
-  mock_data:   # Named volume for persisting mock data 
+  quote_data:
+    driver: local
+  mock_data:
+    driver: local 
