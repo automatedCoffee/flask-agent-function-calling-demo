@@ -38,7 +38,7 @@ logging.getLogger().handlers = []
 
 # Check if running in Docker
 is_docker = os.environ.get('DOCKER_CONTAINER', '').lower() == 'true'
-host = '0.0.0.0' if is_docker else 'localhost'
+host = '0.0.0.0' if is_docker else '127.0.0.1'
 port = 5000
 
 
@@ -788,14 +788,27 @@ def handle_stop_voice_agent():
 
 
 if __name__ == "__main__":
+    # Determine if running in production (e.g., via start.sh which doesn't set a specific env var)
+    # or local development. We can use the presence of the reloader as a proxy.
+    is_production = not app.debug or os.environ.get('WERKZEUG_RUN_MAIN') == 'true'
+    
+    # Set the host to '0.0.0.0' to be accessible from outside the container/server
+    # In local development, you might prefer '127.0.0.1' or 'localhost'
+    run_host = '0.0.0.0'
+    
+    # Disable debug mode and reloader in a production-like environment
+    # The reloader can cause issues with background threads and resource management
+    use_reloader = False if is_production else True
+    
     print("\n" + "=" * 60)
     print("🚀 Voice Agent Demo Starting!")
     print("=" * 60)
-    print("\n1. Open this link in your browser to start the demo:")
-    print("   http://localhost:5000")
+    print(f"\n1. Open this link in your browser to start the demo:")
+    print(f"   http://{run_host}:{port}")
     print("\n2. Click 'Start Voice Agent' when the page loads")
     print("\n3. Speak with the agent using your microphone")
     print("\nPress Ctrl+C to stop the server\n")
     print("=" * 60 + "\n")
 
-    socketio.run(app, host=host, port=port, debug=True, use_reloader=True)
+    # Use app.run for more control over parameters
+    socketio.run(app, host=run_host, port=port, debug=False, use_reloader=False)
