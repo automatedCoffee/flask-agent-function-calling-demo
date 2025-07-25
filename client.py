@@ -62,6 +62,7 @@ class VoiceAgent:
         self.stream = None
         self.input_device_id = None
         self.output_device_id = None
+        # Use a fresh instance of AgentTemplates to ensure the latest prompt is used
         self.agent_templates = AgentTemplates(industry, voiceName, voiceModel)
         self.last_pong = time.time()
         self.heartbeat_task = None
@@ -271,8 +272,9 @@ class VoiceAgent:
                                 logger.info("Voice agent settings applied successfully")
                             elif message_type == "UserStartedSpeaking":
                                 logger.info("User started speaking, stopping audio playback")
-                                # Don't reset is_agent_outputting here - let AgentAudioDone handle it
                                 self.speaker.stop()
+                                # When user interrupts, we are no longer outputting audio
+                                self.is_agent_outputting = False
                             elif message_type == "ConversationText":
                                 logger.info(f"Received conversation text: {message_json.get('content')}")
                                 # Emit the conversation text to the client
@@ -357,8 +359,8 @@ class VoiceAgent:
                                 logger.error(f"Received error from server: {message_json.get('description')}")
                             elif message_type == "AgentAudioDone":
                                 logger.info("Agent finished outputting audio - microphone will be active shortly")
-                                # Add a small delay before reactivating microphone to prevent feedback
-                                await asyncio.sleep(0.5)
+                                # Add a longer delay before reactivating microphone to ensure playback buffer is clear
+                                await asyncio.sleep(1.0)
                                 self.is_agent_outputting = False
                                 logger.info("Microphone now active")
                             else:
@@ -534,14 +536,11 @@ class Speaker:
             self.audio_queue.put(data)
 
     def stop(self):
-        """Stop playing audio"""
+        """Stop playing audio by clearing the queue."""
         logger.info("Stopping audio playback and clearing queue")
-        self.stop_flag = True
         # Clear the audio queue to stop playback immediately
         with self.audio_queue.mutex:
             self.audio_queue.queue.clear()
-        # Reset stop flag after clearing queue
-        self.stop_flag = False
 
 
 async def inject_agent_message(ws, inject_message):
