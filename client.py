@@ -21,7 +21,15 @@ from common.log_formatter import CustomFormatter
 
 
 # Load environment variables from .env file
-load_dotenv()
+print("--- Attempting to load .env file ---")
+found_dotenv = load_dotenv()
+print(f"Result of load_dotenv(): {found_dotenv}")
+
+# Check for the API key immediately after loading
+dg_api_key_check = os.environ.get("DEEPGRAM_API_KEY")
+print(f"DEEPGRAM_API_KEY after load: {'Found' if dg_api_key_check else 'Not Found'}")
+if not dg_api_key_check:
+    print("!!! CRITICAL: Deepgram API key is missing. The application will fail. !!!")
 
 
 # Configure Flask and SocketIO
