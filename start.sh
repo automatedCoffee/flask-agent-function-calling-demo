@@ -38,6 +38,8 @@ echo "\nPulseAudio service is responsive."
 
 # --- Configure ALSA to use PulseAudio ---
 # This tells ALSA-aware applications (like PyAudio) to use our PulseAudio server.
+# Exporting PULSE_SERVER is a more direct way to ensure clients connect correctly.
+export PULSE_SERVER=unix:/tmp/pulseaudio.socket
 cat > /etc/asound.conf << EOL
 pcm.!default {
     type pulse
