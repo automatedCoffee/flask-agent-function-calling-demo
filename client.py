@@ -12,12 +12,16 @@ import sys
 import time
 import requests
 from datetime import datetime
+from dotenv import load_dotenv
 from common.agent_functions import FUNCTION_MAP
 from common.agent_templates import AgentTemplates, AGENT_AUDIO_SAMPLE_RATE
 import logging
 from common.business_logic import MOCK_DATA
 from common.log_formatter import CustomFormatter
 
+
+# Load environment variables from .env file
+load_dotenv()
 
 
 # Configure Flask and SocketIO
