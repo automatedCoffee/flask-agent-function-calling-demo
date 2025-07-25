@@ -1,46 +1,49 @@
 #!/bin/bash
 
-# Stop any existing PulseAudio instances to ensure a clean slate.
+# --- Stop and Clean Up ---
+echo "Stopping any existing PulseAudio instances..."
 pulseaudio --kill &>/dev/null
 pkill pulseaudio &>/dev/null
 sleep 1
-
-# --- Configure PulseAudio for System-Wide Mode ---
-echo "Configuring PulseAudio for system-wide mode..."
-
-# Clean up any leftover files that could cause conflicts.
 rm -rf /var/run/pulse/* /var/lib/pulse/* /tmp/pulseaudio.socket
 
-# Create necessary directories and set permissions.
-# This is required for system-wide mode to function correctly.
+# --- Configure and Start PulseAudio ---
+echo "Configuring and starting PulseAudio in system-wide mode..."
 mkdir -p /var/run/pulse /var/lib/pulse
-chown -R pulse:pulse /var/run/pulse /var/lib/pulse || { echo "ERROR: Failed to chown pulse directories. Does the 'pulse' user exist? Try 'apt-get install pulseaudio'"; exit 1; }
+chown -R pulse:pulse /var/run/pulse /var/lib/pulse
 
-# Create a minimal system.pa configuration to avoid loading default configs that might fail on a headless server.
+# Create a clean system.pa config with TWO INDEPENDENT VIRTUAL DEVICES
+# This is the key to eliminating the feedback loop.
 cat > /etc/pulse/system.pa << EOL
 .fail
-load-module module-null-sink sink_name=dummy sink_properties=device.description="Virtual_Dummy_Sink"
+
+# 1. A virtual SINK (speaker) for the agent to play audio to.
+load-module module-null-sink sink_name=agent_speaker sink_properties=device.description="Virtual_Agent_Speaker"
+
+# 2. A virtual SOURCE (microphone) that produces a constant stream of silence.
+# This source is NOT a monitor of the sink, thus breaking the feedback loop.
+load-module module-zero-source source_name=user_mic source_properties=device.description="Virtual_User_Microphone"
+
+# 3. The native protocol socket for clients to connect to.
 load-module module-native-protocol-unix auth-anonymous=1 socket=/tmp/pulseaudio.socket
-set-default-sink dummy
-set-default-source dummy.monitor
+
+# 4. Set these new devices as the defaults for the system.
+set-default-sink agent_speaker
+set-default-source user_mic
 EOL
 
-# --- Start PulseAudio Daemon ---
-echo "Starting PulseAudio in system-wide daemon mode..."
-# Using --daemonize lets it run in the background.
+# Start the PulseAudio daemon
 pulseaudio --system --disallow-exit --exit-idle-time=-1 --daemonize
 
 # --- Wait for PulseAudio to be Ready ---
-echo "Waiting for PulseAudio service to start..."
-# We loop until pactl can successfully get info, which means the server is ready.
+echo "Waiting for PulseAudio service..."
 until pactl info &>/dev/null; do
     echo -n "."
     sleep 1
 done
-echo "\nPulseAudio service is responsive."
+echo -e "\nPulseAudio service is responsive."
 
 # --- Final Checks and Application Start ---
-# No longer need to manage ALSA config or PULSE_SERVER env var, as Python code now handles device selection.
 sleep 1
 echo "--- PulseAudio Sinks (Outputs) ---"
 pactl list sinks short
@@ -48,5 +51,4 @@ echo "--- PulseAudio Sources (Inputs) ---"
 pactl list sources short
 
 echo "--- Starting Application ---"
-# Execute the command passed to this script (e.g., "python3 client.py")
 exec "$@" 
