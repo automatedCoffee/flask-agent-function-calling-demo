@@ -12,6 +12,7 @@ echo "Configuring PulseAudio for system-wide mode..."
 rm -rf /var/run/pulse/* /var/lib/pulse/* /tmp/pulseaudio.socket
 
 # Create necessary directories and set permissions.
+# This is required for system-wide mode to function correctly.
 mkdir -p /var/run/pulse /var/lib/pulse
 chown -R pulse:pulse /var/run/pulse /var/lib/pulse || { echo "ERROR: Failed to chown pulse directories. Does the 'pulse' user exist? Try 'apt-get install pulseaudio'"; exit 1; }
 
@@ -26,30 +27,20 @@ EOL
 
 # --- Start PulseAudio Daemon ---
 echo "Starting PulseAudio in system-wide daemon mode..."
+# Using --daemonize lets it run in the background.
 pulseaudio --system --disallow-exit --exit-idle-time=-1 --daemonize
 
 # --- Wait for PulseAudio to be Ready ---
 echo "Waiting for PulseAudio service to start..."
+# We loop until pactl can successfully get info, which means the server is ready.
 until pactl info &>/dev/null; do
     echo -n "."
     sleep 1
 done
 echo "\nPulseAudio service is responsive."
 
-# --- Configure ALSA to use PulseAudio ---
-# This tells ALSA-aware applications (like PyAudio) to use our PulseAudio server.
-# Exporting PULSE_SERVER is a more direct way to ensure clients connect correctly.
-export PULSE_SERVER=unix:/tmp/pulseaudio.socket
-cat > /etc/asound.conf << EOL
-pcm.!default {
-    type pulse
-}
-ctl.!default {
-    type pulse
-}
-EOL
-
 # --- Final Checks and Application Start ---
+# No longer need to manage ALSA config or PULSE_SERVER env var, as Python code now handles device selection.
 sleep 1
 echo "--- PulseAudio Sinks (Outputs) ---"
 pactl list sinks short
@@ -57,4 +48,5 @@ echo "--- PulseAudio Sources (Inputs) ---"
 pactl list sources short
 
 echo "--- Starting Application ---"
+# Execute the command passed to this script (e.g., "python3 client.py")
 exec "$@" 

@@ -194,9 +194,19 @@ class VoiceAgent:
             # If no valid device selected, use default device
             if input_device_index is None:
                 try:
-                    default_device = self.audio.get_default_input_device_info()
-                    input_device_index = default_device['index']
-                    logger.info(f"Using default input device index: {input_device_index}")
+                    # On Linux, we want the device named 'pulse' or 'default' if available
+                    if sys.platform == 'linux' or sys.platform == 'linux2':
+                        for i in available_devices:
+                            device_info = self.audio.get_device_info_by_index(i)
+                            if device_info.get('name') in ['pulse', 'default']:
+                                input_device_index = i
+                                logger.info(f"Linux: Found and selected '{device_info.get('name')}' input device index: {input_device_index}")
+                                break
+                    
+                    if input_device_index is None:
+                        default_device = self.audio.get_default_input_device_info()
+                        input_device_index = default_device['index']
+                        logger.info(f"Using default input device index: {input_device_index}")
                 except IOError:
                     # If no default device, use first available
                     if available_devices:
@@ -430,7 +440,7 @@ def _play(audio_out, stream, stop):
 class Speaker:
     def __init__(self, agent_audio_sample_rate=None, output_device_id=None):
         self.agent_audio_sample_rate = agent_audio_sample_rate or AGENT_AUDIO_SAMPLE_RATE
-        self.output_device_id = output_device_id
+        self.output_device_id = int(output_device_id) if output_device_id and str(output_device_id).isdigit() else None
         self.audio = None
         self.stream = None
         self.stop_flag = False
@@ -457,9 +467,21 @@ class Speaker:
             if output_device_index is None:
                 # Try to get default output device
                 try:
-                    default_device = self.audio.get_default_output_device_info()
-                    output_device_index = default_device['index']
-                    logger.info(f"Using default output device index: {output_device_index}")
+                    # On Linux, we want the device named 'pulse' or 'default' if available
+                    if sys.platform == 'linux' or sys.platform == 'linux2':
+                        info = self.audio.get_host_api_info_by_index(0)
+                        numdevices = info.get("deviceCount")
+                        for i in range(numdevices):
+                            device_info = self.audio.get_device_info_by_index(i)
+                            if device_info.get('maxOutputChannels') > 0 and device_info.get('name') in ['pulse', 'default']:
+                                output_device_index = i
+                                logger.info(f"Linux: Found and selected '{device_info.get('name')}' output device index: {output_device_index}")
+                                break
+
+                    if output_device_index is None:
+                        default_device = self.audio.get_default_output_device_info()
+                        output_device_index = default_device['index']
+                        logger.info(f"Using default output device index: {output_device_index}")
                 except IOError:
                     # If no default device, find first available output device
                     info = self.audio.get_host_api_info_by_index(0)
@@ -604,28 +626,47 @@ async def wait_for_farewell_completion(ws, speaker, inject_message):
 
 # Get available audio devices
 def get_audio_devices():
-    try:
-        audio = pyaudio.PyAudio()
-        info = audio.get_host_api_info_by_index(0)
-        numdevices = info.get("deviceCount")
+    """Returns a list of input and output devices, ensuring PulseAudio is prioritized on Linux."""
+    p = pyaudio.PyAudio()
+    host_apis = p.get_host_api_count()
+    info = p.get_host_api_info_by_index(0)
+    numdevices = info.get("deviceCount")
 
-        input_devices = []
-        output_devices = []
-        
-        for i in range(0, numdevices):
-            device_info = audio.get_device_info_by_host_api_device_index(0, i)
-            device_entry = {"index": i, "name": device_info.get("name")}
-            
+    input_devices = []
+    output_devices = []
+
+    pulse_api_index = -1
+    # On Linux, find the PulseAudio Host API
+    if sys.platform == 'linux' or sys.platform == 'linux2':
+        for i in range(p.get_host_api_count()):
+            api_info = p.get_host_api_info_by_index(i)
+            if 'PulseAudio' in api_info.get('name'):
+                pulse_api_index = i
+                break
+    
+    # If PulseAudio is found, get devices from it specifically
+    if pulse_api_index != -1:
+        pulse_api_info = p.get_host_api_info_by_index(pulse_api_index)
+        numdevices = pulse_api_info.get('deviceCount')
+        for i in range(numdevices):
+            device_info = p.get_device_info_by_host_api_device_index(pulse_api_index, i)
+            device_entry = {"index": device_info.get("index"), "name": device_info.get("name")}
             if device_info.get("maxInputChannels") > 0:
                 input_devices.append(device_entry.copy())
             if device_info.get("maxOutputChannels") > 0:
                 output_devices.append(device_entry.copy())
-
-        audio.terminate()
-        return {"input": input_devices, "output": output_devices}
-    except Exception as e:
-        logger.error(f"Error getting audio devices: {e}")
-        return {"input": [], "output": []}
+    else:
+        # Fallback for non-Linux or if PulseAudio is not found
+        for i in range(p.get_device_count()):
+            device_info = p.get_device_info_by_index(i)
+            device_entry = {"index": i, "name": device_info.get("name")}
+            if device_info.get("maxInputChannels") > 0:
+                input_devices.append(device_entry.copy())
+            if device_info.get("maxOutputChannels") > 0:
+                output_devices.append(device_entry.copy())
+                
+    p.terminate()
+    return {"input": input_devices, "output": output_devices}
 
 
 # Flask routes
