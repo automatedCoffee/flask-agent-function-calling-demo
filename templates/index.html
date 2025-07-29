@@ -71,24 +71,36 @@
             console.log("Attempting to start audio...");
             statusDiv.textContent = 'Status: Initializing...';
             try {
-                // 1. Get Microphone Access
+                // 1. Create and Resume AudioContext
+                // Must be created in response to a user gesture (like a click).
+                audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+                if (audioContext.state === 'suspended') {
+                    await audioContext.resume();
+                }
+                console.log(`AudioContext created and is in state: ${audioContext.state}`);
+
+                // 2. Load the AudioWorklet module
+                try {
+                    console.log("Loading AudioWorklet module...");
+                    await audioContext.audioWorklet.addModule('/audio-processor.js');
+                    console.log("AudioWorklet module loaded successfully.");
+                } catch (e) {
+                    console.error("Fatal: Could not load AudioWorklet module.", e);
+                    statusDiv.textContent = 'Error: Failed to load audio processor.';
+                    return;
+                }
+                
+                // 3. Get Microphone Access
                 stream = await navigator.mediaDevices.getUserMedia({ 
                     audio: { sampleRate: 16000, channelCount: 1 }
                 });
                 console.log("Microphone access granted.");
-
-                // 2. Create and Configure AudioContext and Worklet
-                audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
-                console.log("AudioContext created.");
-
-                await audioContext.audioWorklet.addModule('audio-processor.js');
-                console.log("AudioWorklet module loaded.");
                 
+                // 4. Create nodes and connect the pipeline
                 microphone = audioContext.createMediaStreamSource(stream);
                 audioWorkletNode = new AudioWorkletNode(audioContext, 'audio-processor');
                 console.log("AudioWorkletNode created.");
 
-                // 3. Set up the audio data pipeline
                 audioWorkletNode.port.onmessage = (event) => {
                     if (isActive) {
                         socket.emit('user_audio', event.data);
@@ -97,10 +109,9 @@
                 console.log("Worklet message listener set up.");
 
                 microphone.connect(audioWorkletNode);
-                // DO NOT connect the worklet to the destination, to prevent feedback.
                 console.log("Microphone connected to worklet.");
 
-                // 4. Connect to the backend agent
+                // 5. Connect to the backend agent
                 socket.emit('start_voice_agent', { voiceModel: currentVoiceModel });
                 console.log("'start_voice_agent' event sent.");
 
@@ -112,6 +123,7 @@
                 console.error('Error starting audio:', err);
                 statusDiv.textContent = `Error: ${err.message}`;
                 isActive = false;
+                stopAudio(); // Clean up on failure
             }
         }
 
