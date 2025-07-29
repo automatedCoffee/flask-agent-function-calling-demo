@@ -17,7 +17,7 @@ load_dotenv()
 
 # Configure Flask and SocketIO
 app = Flask(__name__, static_folder="./static", static_url_path="/")
-# Use 'aiohttp' as the async_mode for compatibility with the latest libraries.
+# The async_mode must be 'aiohttp' for the latest library versions.
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='aiohttp')
 
 # --- Logging Setup ---
