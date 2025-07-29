@@ -5,16 +5,22 @@
 class AudioProcessor extends AudioWorkletProcessor {
     constructor() {
         super();
-        this.buffer = [];
-        this.totalSize = 0;
+        this.sampleCount = 0;
     }
 
     process(inputs, outputs, parameters) {
         const input = inputs[0];
         if (input.length > 0) {
             const channelData = input[0];
+            // Log every 16000 samples (roughly every second)
+            this.sampleCount += channelData.length;
+            if (this.sampleCount >= 16000) {
+                console.log(`[Worklet] Processed ${this.sampleCount} audio samples.`);
+                this.sampleCount = 0;
+            }
+
             const pcmData = this.convertToPcm(channelData);
-            this.port.postMessage(pcmData);
+            this.port.postMessage(pcmData, [pcmData]);
         }
         return true;
     }

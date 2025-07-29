@@ -101,7 +101,9 @@
                 audioWorkletNode = new AudioWorkletNode(audioContext, 'audio-processor');
                 console.log("AudioWorkletNode created.");
 
+                // 3. Set up the audio data pipeline
                 audioWorkletNode.port.onmessage = (event) => {
+                    console.log("[Main] Received audio data from worklet.");
                     if (isActive) {
                         socket.emit('user_audio', event.data);
                     }
@@ -111,7 +113,7 @@
                 microphone.connect(audioWorkletNode);
                 console.log("Microphone connected to worklet.");
 
-                // 5. Connect to the backend agent
+                // 4. Connect to the backend agent ONLY after the pipeline is fully set up.
                 socket.emit('start_voice_agent', { voiceModel: currentVoiceModel });
                 console.log("'start_voice_agent' event sent.");
 
