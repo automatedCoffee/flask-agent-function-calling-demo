@@ -17,7 +17,7 @@ load_dotenv()
 
 # Configure Flask and SocketIO
 app = Flask(__name__, static_folder="./static", static_url_path="/")
-socketio = SocketIO(app, cors_allowed_origins="*")
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='asyncio')
 
 # --- Logging Setup ---
 logger = logging.getLogger(__name__)
@@ -166,7 +166,7 @@ class VoiceAgent:
 voice_agent = None
 
 @socketio.on('start_voice_agent')
-def handle_start_voice_agent(data):
+async def handle_start_voice_agent(data):
     global voice_agent
     if voice_agent and voice_agent.is_running:
         logger.info("Voice agent is already running.")
@@ -178,7 +178,7 @@ def handle_start_voice_agent(data):
     voiceName = data.get("voiceName", "")
     
     voice_agent = VoiceAgent(industry, voiceModel, voiceName)
-    socketio.start_background_task(target=asyncio.run, args=(voice_agent.run(),))
+    socketio.start_background_task(voice_agent.run)
 
 @socketio.on('user_audio')
 def handle_user_audio(audio_data):
