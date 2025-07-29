@@ -20,234 +20,258 @@
             </div>
             <div class="controls">
                 <label class="toggle">
-                    <input type="checkbox" id="showLogs">
-                    <span class="toggle-label">Show Logs</span>
+                    <input type="checkbox" id="holdToTalk">
+                    <span class="slider"></span>
                 </label>
-                <label class="toggle">
-                    <input type="checkbox" id="darkMode" checked>
-                    <span class="toggle-label">Dark Mode</span>
-                </label>
+                <label for="holdToTalk" class="toggle-label">Hold-to-Talk</label>
+            </div>
+            <hr>
+            <div class="logs-container syncscroll" name="log-container">
+                <div id="logs" class="logs"></div>
             </div>
         </div>
-        <div class="columns-container">
-            <div id="conversation" class="timeline column">
-                <h2>Conversation</h2>
-                <div id="conversationMessages" class="timeline-messages"></div>
-            </div>
-            <div id="logs" class="timeline column" style="display: none;">
-                <h2>Logs</h2>
-                <div id="logMessages" class="timeline-messages"></div>
-            </div>
+        <div class="content-container syncscroll" name="log-container">
+            <div id="conversation" class="conversation-panel"></div>
         </div>
     </div>
 
     <script>
-        const socket = io();
-        const startButton = document.getElementById('startButton');
-        const statusDiv = document.getElementById('status');
-        const voiceModelSelect = document.getElementById('voiceModel');
-        const conversationMessages = document.getElementById('conversationMessages');
-        const logMessages = document.getElementById('logMessages');
-        const showLogsToggle = document.getElementById('showLogs');
-        const logsColumn = document.getElementById('logs');
-        const darkModeToggle = document.getElementById('darkMode');
+        document.addEventListener("DOMContentLoaded", () => {
+            const startButton = document.getElementById('startButton');
+            const statusDiv = document.getElementById('status');
+            const logsDiv = document.getElementById('logs');
+            const conversationDiv = document.getElementById('conversation');
+            const voiceModelSelect = document.getElementById('voiceModel');
+            const holdToTalkCheckbox = document.getElementById('holdToTalk');
+            const syncScrollContainers = document.querySelectorAll('.syncscroll');
 
-        let isActive = false;
-        let audioContext;
-        let audioWorkletNode;
-        let microphone;
-        let stream;
+            let socket;
+            let audioContext;
+            let audioWorkletNode;
+            let microphoneStream;
+            let audioQueue = [];
+            let isPlaying = false;
+            let isActive = false;
+            let isMuted = false;
+            let holdToTalkActive = false;
 
-        let audioQueue = [];
-        let isPlaying = false;
-        let currentVoiceModel = 'aura-2-thalia-en';
+            // --- UI and Logging ---
 
-        // --- Core Audio Logic ---
-        async function startAudio() {
-            if (isActive) {
-                stopAudio();
-                return;
+            function logMessage(message, type = 'info') {
+                const logEntry = document.createElement('div');
+                logEntry.className = `log-entry log-${type}`;
+                logEntry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+                logsDiv.appendChild(logEntry);
+                logsDiv.scrollTop = logsDiv.scrollHeight;
             }
-            console.log("Attempting to start audio...");
-            statusDiv.textContent = 'Status: Initializing...';
-            try {
-                // 1. Create and Resume AudioContext
-                // Must be created in response to a user gesture (like a click).
-                audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
-                if (audioContext.state === 'suspended') {
-                    await audioContext.resume();
-                }
-                console.log(`AudioContext created and is in state: ${audioContext.state}`);
 
-                // 2. Load the AudioWorklet module
+            function addConversationMessage(role, text) {
+                const messageBubble = document.createElement('div');
+                messageBubble.className = `message-bubble ${role}`;
+                messageBubble.textContent = text;
+                conversationDiv.appendChild(messageBubble);
+                conversationDiv.scrollTop = conversationDiv.scrollHeight;
+            }
+
+            function setStatus(text) {
+                statusDiv.textContent = `Status: ${text}`;
+            }
+
+            // --- Scroll Syncing ---
+            syncScrollContainers.forEach(el => {
+                el.addEventListener('scroll', () => {
+                    const scrollY = el.scrollTop;
+                    syncScrollContainers.forEach(otherEl => {
+                        if (otherEl !== el) {
+                            otherEl.scrollTop = scrollY;
+                        }
+                    });
+                });
+            });
+
+            // --- API Calls ---
+
+            async function fetchVoiceModels() {
                 try {
-                    console.log("Loading AudioWorklet module...");
-                    await audioContext.audioWorklet.addModule('/audio-processor.js');
-                    console.log("AudioWorklet module loaded successfully.");
-                } catch (e) {
-                    console.error("Fatal: Could not load AudioWorklet module.", e);
-                    statusDiv.textContent = 'Error: Failed to load audio processor.';
-                    return;
-                }
-                
-                // 3. Get Microphone Access
-                stream = await navigator.mediaDevices.getUserMedia({ 
-                    audio: { sampleRate: 16000, channelCount: 1 }
-                });
-                console.log("Microphone access granted.");
-                
-                // 4. Create nodes and connect the pipeline
-                microphone = audioContext.createMediaStreamSource(stream);
-                audioWorkletNode = new AudioWorkletNode(audioContext, 'audio-processor');
-                console.log("AudioWorkletNode created.");
-
-                // 3. Set up the audio data pipeline
-                audioWorkletNode.port.onmessage = (event) => {
-                    console.log("[Main] Received audio data from worklet.");
-                    if (isActive) {
-                        socket.emit('user_audio', event.data);
+                    const response = await fetch('/tts-models');
+                    const data = await response.json();
+                    if (data.models) {
+                        voiceModelSelect.innerHTML = '';
+                        data.models.forEach(model => {
+                            const option = document.createElement('option');
+                            option.value = model.name;
+                            option.textContent = model.display_name;
+                            voiceModelSelect.appendChild(option);
+                        });
+                        voiceModelSelect.value = 'aura-2-thalia-en'; // Default
+                    } else {
+                        logMessage('Failed to load voice models.', 'error');
                     }
-                };
-                console.log("Worklet message listener set up.");
+                } catch (error) {
+                    logMessage(`Error fetching voice models: ${error}`, 'error');
+                }
+            }
+            
+            // --- Core Audio Logic ---
 
-                microphone.connect(audioWorkletNode);
-                console.log("Microphone connected to worklet.");
-
-                // 4. Connect to the backend agent ONLY after the pipeline is fully set up.
-                socket.emit('start_voice_agent', { voiceModel: currentVoiceModel });
-                console.log("'start_voice_agent' event sent.");
-
-                startButton.textContent = 'Stop Voice Agent';
-                statusDiv.textContent = 'Status: Connecting...';
+            async function startAudio() {
+                if (isActive) return;
                 isActive = true;
+                setStatus('Initializing...');
+                logMessage('Starting audio pipeline...');
 
-            } catch (err) {
-                console.error('Error starting audio:', err);
-                statusDiv.textContent = `Error: ${err.message}`;
+                try {
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+                    if (audioContext.state === 'suspended') await audioContext.resume();
+
+                    await audioContext.audioWorklet.addModule('/audio-processor.js');
+                    audioWorkletNode = new AudioWorkletNode(audioContext, 'audio-processor');
+
+                    microphoneStream = await navigator.mediaDevices.getUserMedia({ audio: { sampleRate: 16000, channelCount: 1 }});
+                    const microphone = audioContext.createMediaStreamSource(microphoneStream);
+                    microphone.connect(audioWorkletNode);
+
+                    audioWorkletNode.port.onmessage = (event) => {
+                        if (socket && socket.connected && !isMuted) {
+                            socket.emit('user_audio', event.data);
+                        }
+                    };
+                    
+                    logMessage('Audio pipeline ready.');
+                    connectSocket();
+
+                } catch (error) {
+                    logMessage(`Failed to start audio: ${error}`, 'error');
+                    setStatus('Error');
+                    isActive = false;
+                }
+            }
+
+            function stopAudio() {
+                if (!isActive) return;
                 isActive = false;
-                stopAudio(); // Clean up on failure
-            }
-        }
-
-        function stopAudio() {
-            if (!isActive) return;
-            console.log("Stopping audio...");
-            socket.emit('stop_voice_agent');
-            
-            if (microphone) microphone.disconnect();
-            if (audioWorkletNode) audioWorkletNode.disconnect();
-            if (stream) stream.getTracks().forEach(track => track.stop());
-            if (audioContext && audioContext.state !== 'closed') {
-                audioContext.close();
-            }
-
-            audioQueue = [];
-            isPlaying = false;
-            startButton.textContent = 'Start Voice Agent';
-            statusDiv.textContent = 'Status: Inactive';
-            isActive = false;
-            console.log("Audio stopped.");
-        }
-
-        async function playNextInQueue() {
-            if (isPlaying || audioQueue.length === 0 || !audioContext) return;
-            
-            isPlaying = true;
-            const audioData = audioQueue.shift();
-
-            try {
-                const audioBuffer = await audioContext.decodeAudioData(audioData);
-                const source = audioContext.createBufferSource();
-                source.buffer = audioBuffer;
-                source.connect(audioContext.destination);
-                source.onended = () => {
-                    isPlaying = false;
-                    playNextInQueue();
-                };
-                source.start();
-            } catch (e) {
-                console.error("Error decoding or playing audio:", e);
+                logMessage('Stopping audio pipeline...');
+                if (socket) {
+                    socket.emit('stop_voice_agent');
+                    socket.disconnect();
+                }
+                if (microphoneStream) {
+                    microphoneStream.getTracks().forEach(track => track.stop());
+                }
+                if (audioContext && audioContext.state !== 'closed') {
+                    audioContext.close();
+                }
+                audioQueue = [];
                 isPlaying = false;
-                playNextInQueue(); // Try the next item
+                setStatus('Inactive');
+                startButton.textContent = 'Start Voice Agent';
             }
-        }
 
-        // --- Socket Event Handlers ---
-        socket.on('agent_audio', (audioChunk) => {
-            if (audioContext && audioChunk) {
-                audioQueue.push(audioChunk);
-                if (!isPlaying) {
-                    playNextInQueue();
-                }
-            }
-        });
+            function playNextAudioChunk() {
+                if (isPlaying || audioQueue.length === 0) return;
+                isPlaying = true;
 
-        socket.on('agent_response', (data) => {
-            console.log("Agent response received:", data);
-            if(data.type === "Welcome") {
-                statusDiv.textContent = "Status: Connected";
-            }
-            if(data.content) {
-                addMessage(data.role || 'system', data.content, 'conversation');
-            }
-        });
-
-        socket.on('log_message', (data) => {
-            addMessage('log', data.message, 'log');
-        });
-        
-        socket.on('disconnect', () => {
-            console.log("Socket disconnected.");
-            stopAudio();
-            statusDiv.textContent = 'Status: Disconnected';
-        });
-
-        // --- UI and Helper Functions ---
-        function addMessage(role, content, type) {
-            const container = type === 'log' ? logMessages : conversationMessages;
-            const messageDiv = document.createElement('div');
-            messageDiv.className = `timeline-item message ${role}`;
-            messageDiv.textContent = `${role}: ${content}`;
-            container.appendChild(messageDiv);
-            scrollToBottom(container);
-        }
-        
-        function scrollToBottom(element) {
-            element.scrollTop = element.scrollHeight;
-        }
-
-        function loadTTSModels() {
-            fetch('/tts-models').then(response => response.json()).then(data => {
-                if (data.error) {
-                    console.error('Error loading TTS models:', data.error);
-                    return;
-                }
-                voiceModelSelect.innerHTML = '';
-                data.models.forEach(model => {
-                    const option = document.createElement('option');
-                    option.value = model.name;
-                    option.text = `${model.display_name} (${model.language})`;
-                    voiceModelSelect.appendChild(option);
+                const audioData = audioQueue.shift();
+                audioContext.decodeAudioData(audioData.buffer, (buffer) => {
+                    const source = audioContext.createBufferSource();
+                    source.buffer = buffer;
+                    source.connect(audioContext.destination);
+                    source.start(0);
+                    source.onended = () => {
+                        isPlaying = false;
+                        playNextAudioChunk(); // Play next in queue
+                    };
+                }, (error) => {
+                    logMessage(`Error decoding audio: ${error}`, 'error');
+                    isPlaying = false;
+                    playNextAudioChunk();
                 });
-                voiceModelSelect.value = currentVoiceModel;
-            }).catch(e => console.error("Failed to fetch TTS models:", e));
-        }
-        
-        startButton.addEventListener('click', startAudio);
-        voiceModelSelect.addEventListener('change', (e) => currentVoiceModel = e.target.value);
-        showLogsToggle.addEventListener('change', () => {
-            logsColumn.style.display = showLogsToggle.checked ? 'block' : 'none';
-        });
+            }
 
-        darkModeToggle.addEventListener('change', () => {
-            document.body.classList.toggle('dark-mode', darkModeToggle.checked);
-        });
-        
-        document.addEventListener('DOMContentLoaded', () => {
-            loadTTSModels();
-            document.body.classList.toggle('dark-mode', darkModeToggle.checked);
-        });
+            // --- WebSocket Logic ---
 
+            function connectSocket() {
+                if (socket && socket.connected) return;
+
+                socket = io();
+
+                socket.on('connect', () => {
+                    logMessage('Socket connected successfully.');
+                    setStatus('Connected, starting agent...');
+                    const sessionConfig = {
+                        voiceModel: voiceModelSelect.value,
+                    };
+                    socket.emit('start_voice_agent', sessionConfig);
+                });
+
+                socket.on('disconnect', () => {
+                    logMessage('Socket disconnected.', 'warn');
+                    stopAudio(); // Full cleanup on disconnect
+                });
+
+                socket.on('agent_response', (data) => {
+                    logMessage(`Agent Response: ${JSON.stringify(data)}`);
+                    switch (data.type) {
+                        case 'Welcome':
+                            setStatus('Agent Ready');
+                            break;
+                        case 'ConversationText':
+                            addConversationMessage('assistant', data.content);
+                            break;
+                        case 'Error':
+                            logMessage(`Agent Error: ${data.description}`, 'error');
+                            setStatus('Error');
+                            break;
+                    }
+                });
+
+                socket.on('agent_audio', (chunk) => {
+                    audioQueue.push(new Uint8Array(chunk));
+                    playNextAudioChunk();
+                });
+            }
+
+            // --- Event Listeners ---
+
+            startButton.addEventListener('click', () => {
+                if (isActive) {
+                    stopAudio();
+                } else {
+                    startAudio();
+                    startButton.textContent = 'Stop Voice Agent';
+                }
+            });
+
+            holdToTalkCheckbox.addEventListener('change', (e) => {
+                holdToTalkActive = e.target.checked;
+                logMessage(`Hold-to-Talk ${holdToTalkActive ? 'activated' : 'deactivated'}.`);
+                if (!holdToTalkActive) {
+                    isMuted = false; // Unmute if mode is turned off
+                } else {
+                    isMuted = true; // Mute by default in hold-to-talk mode
+                }
+            });
+
+            document.body.addEventListener('keydown', (e) => {
+                if (e.code === 'Space' && holdToTalkActive && isMuted) {
+                    e.preventDefault();
+                    isMuted = false;
+                    logMessage('Speaking...', 'user');
+                    setStatus('Listening...');
+                }
+            });
+
+            document.body.addEventListener('keyup', (e) => {
+                if (e.code === 'Space' && holdToTalkActive && !isMuted) {
+                    e.preventDefault();
+                    isMuted = true;
+                    logMessage('Stopped speaking.');
+                     setStatus('Agent Ready');
+                }
+            });
+
+            fetchVoiceModels();
+        });
     </script>
 </body>
 </html>
