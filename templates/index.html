@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Voice Agent</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
-    <script src="{{ url_for('static', filename='syncscroll.js') }}"></script>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
@@ -33,11 +32,11 @@
         <div class="columns-container">
             <div id="conversation" class="timeline column">
                 <h2>Conversation</h2>
-                <div id="conversationMessages" class="syncscroll" name="timeline"></div>
+                <div id="conversationMessages" class="timeline-messages"></div>
             </div>
-            <div id="logs" class="timeline column">
+            <div id="logs" class="timeline column" style="display: none;">
                 <h2>Logs</h2>
-                <div id="logMessages" class="syncscroll" name="timeline"></div>
+                <div id="logMessages" class="timeline-messages"></div>
             </div>
         </div>
     </div>
@@ -51,77 +50,97 @@
         const logMessages = document.getElementById('logMessages');
         const showLogsToggle = document.getElementById('showLogs');
         const logsColumn = document.getElementById('logs');
+        const darkModeToggle = document.getElementById('darkMode');
 
         let isActive = false;
-        let mediaRecorder;
         let audioContext;
         let audioWorkletNode;
+        let microphone;
+        let stream;
+
         let audioQueue = [];
         let isPlaying = false;
         let currentVoiceModel = 'aura-2-thalia-en';
 
         // --- Core Audio Logic ---
-
         async function startAudio() {
-            if (!isActive) {
-                try {
-                    const stream = await navigator.mediaDevices.getUserMedia({ audio: {
-                        sampleRate: 16000,
-                        channelCount: 1
-                    }});
-                    
-                    audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
-                    await audioContext.audioWorklet.addModule('audio-processor.js');
-                    
-                    const microphone = audioContext.createMediaStreamSource(stream);
-                    audioWorkletNode = new AudioWorkletNode(audioContext, 'audio-processor');
-                    
-                    audioWorkletNode.port.onmessage = (event) => {
-                        if (isActive) {
-                            socket.emit('user_audio', event.data);
-                        }
-                    };
-                    
-                    microphone.connect(audioWorkletNode);
-                    audioWorkletNode.connect(audioContext.destination);
-
-                    socket.emit('start_voice_agent', { voiceModel: currentVoiceModel });
-                    
-                    startButton.textContent = 'Stop Voice Agent';
-                    statusDiv.textContent = 'Status: Active';
-                    isActive = true;
-                } catch (err) {
-                    console.error('Error starting audio:', err);
-                    statusDiv.textContent = 'Error: Could not start audio';
-                }
-            } else {
-                stopAudio();
-            }
-        }
-
-        function stopAudio() {
             if (isActive) {
-                socket.emit('stop_voice_agent');
-                if (audioWorkletNode) {
-                    audioWorkletNode.disconnect();
-                }
-                if (audioContext) {
-                    audioContext.close();
-                }
-                audioQueue = [];
-                isPlaying = false;
-                startButton.textContent = 'Start Voice Agent';
-                statusDiv.textContent = 'Status: Inactive';
+                stopAudio();
+                return;
+            }
+            console.log("Attempting to start audio...");
+            statusDiv.textContent = 'Status: Initializing...';
+            try {
+                // 1. Get Microphone Access
+                stream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: { sampleRate: 16000, channelCount: 1 }
+                });
+                console.log("Microphone access granted.");
+
+                // 2. Create and Configure AudioContext and Worklet
+                audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+                console.log("AudioContext created.");
+
+                await audioContext.audioWorklet.addModule('audio-processor.js');
+                console.log("AudioWorklet module loaded.");
+                
+                microphone = audioContext.createMediaStreamSource(stream);
+                audioWorkletNode = new AudioWorkletNode(audioContext, 'audio-processor');
+                console.log("AudioWorkletNode created.");
+
+                // 3. Set up the audio data pipeline
+                audioWorkletNode.port.onmessage = (event) => {
+                    if (isActive) {
+                        socket.emit('user_audio', event.data);
+                    }
+                };
+                console.log("Worklet message listener set up.");
+
+                microphone.connect(audioWorkletNode);
+                // DO NOT connect the worklet to the destination, to prevent feedback.
+                console.log("Microphone connected to worklet.");
+
+                // 4. Connect to the backend agent
+                socket.emit('start_voice_agent', { voiceModel: currentVoiceModel });
+                console.log("'start_voice_agent' event sent.");
+
+                startButton.textContent = 'Stop Voice Agent';
+                statusDiv.textContent = 'Status: Connecting...';
+                isActive = true;
+
+            } catch (err) {
+                console.error('Error starting audio:', err);
+                statusDiv.textContent = `Error: ${err.message}`;
                 isActive = false;
             }
         }
 
-        async function playNextInQueue() {
-            if (isPlaying || audioQueue.length === 0) {
-                return;
+        function stopAudio() {
+            if (!isActive) return;
+            console.log("Stopping audio...");
+            socket.emit('stop_voice_agent');
+            
+            if (microphone) microphone.disconnect();
+            if (audioWorkletNode) audioWorkletNode.disconnect();
+            if (stream) stream.getTracks().forEach(track => track.stop());
+            if (audioContext && audioContext.state !== 'closed') {
+                audioContext.close();
             }
+
+            audioQueue = [];
+            isPlaying = false;
+            startButton.textContent = 'Start Voice Agent';
+            statusDiv.textContent = 'Status: Inactive';
+            isActive = false;
+            console.log("Audio stopped.");
+        }
+
+        async function playNextInQueue() {
+            if (isPlaying || audioQueue.length === 0 || !audioContext) return;
+            
             isPlaying = true;
             const audioData = audioQueue.shift();
+
             try {
                 const audioBuffer = await audioContext.decodeAudioData(audioData);
                 const source = audioContext.createBufferSource();
@@ -133,31 +152,43 @@
                 };
                 source.start();
             } catch (e) {
-                console.error("Error playing audio:", e);
+                console.error("Error decoding or playing audio:", e);
                 isPlaying = false;
-                playNextInQueue();
+                playNextInQueue(); // Try the next item
             }
         }
 
         // --- Socket Event Handlers ---
-
         socket.on('agent_audio', (audioChunk) => {
-            audioQueue.push(audioChunk);
-            if (!isPlaying) {
-                playNextInQueue();
+            if (audioContext && audioChunk) {
+                audioQueue.push(audioChunk);
+                if (!isPlaying) {
+                    playNextInQueue();
+                }
             }
         });
 
         socket.on('agent_response', (data) => {
-            addMessage(data.role || 'system', data.content || JSON.stringify(data), 'conversation');
+            console.log("Agent response received:", data);
+            if(data.type === "Welcome") {
+                statusDiv.textContent = "Status: Connected";
+            }
+            if(data.content) {
+                addMessage(data.role || 'system', data.content, 'conversation');
+            }
         });
 
         socket.on('log_message', (data) => {
-            addMessage(data.level || 'info', data.message, 'log');
+            addMessage('log', data.message, 'log');
+        });
+        
+        socket.on('disconnect', () => {
+            console.log("Socket disconnected.");
+            stopAudio();
+            statusDiv.textContent = 'Status: Disconnected';
         });
 
         // --- UI and Helper Functions ---
-
         function addMessage(role, content, type) {
             const container = type === 'log' ? logMessages : conversationMessages;
             const messageDiv = document.createElement('div');
@@ -185,14 +216,22 @@
                     voiceModelSelect.appendChild(option);
                 });
                 voiceModelSelect.value = currentVoiceModel;
-            });
+            }).catch(e => console.error("Failed to fetch TTS models:", e));
         }
         
         startButton.addEventListener('click', startAudio);
         voiceModelSelect.addEventListener('change', (e) => currentVoiceModel = e.target.value);
+        showLogsToggle.addEventListener('change', () => {
+            logsColumn.style.display = showLogsToggle.checked ? 'block' : 'none';
+        });
+
+        darkModeToggle.addEventListener('change', () => {
+            document.body.classList.toggle('dark-mode', darkModeToggle.checked);
+        });
         
         document.addEventListener('DOMContentLoaded', () => {
             loadTTSModels();
+            document.body.classList.toggle('dark-mode', darkModeToggle.checked);
         });
 
     </script>
