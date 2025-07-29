@@ -17,8 +17,9 @@ load_dotenv()
 
 # Configure Flask and SocketIO
 app = Flask(__name__, static_folder="./static", static_url_path="/")
-# The async_mode must be 'aiohttp' for the latest library versions.
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='aiohttp')
+# Explicitly use the 'threading' async mode. This is the most robust and
+# avoids conflicts with the asyncio code running in the background.
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
 # --- Logging Setup ---
 logger = logging.getLogger(__name__)
@@ -166,8 +167,15 @@ class VoiceAgent:
 # --- SocketIO Event Handlers ---
 voice_agent = None
 
+def run_agent_in_background(agent):
+    """A helper function to run the agent's async loop in a thread."""
+    try:
+        asyncio.run(agent.run())
+    except Exception as e:
+        logger.error(f"Error in agent background thread: {e}")
+
 @socketio.on('start_voice_agent')
-async def handle_start_voice_agent(data):
+def handle_start_voice_agent(data):
     global voice_agent
     if voice_agent and voice_agent.is_running:
         logger.info("Voice agent is already running.")
@@ -179,7 +187,8 @@ async def handle_start_voice_agent(data):
     voiceName = data.get("voiceName", "")
     
     voice_agent = VoiceAgent(industry, voiceModel, voiceName)
-    socketio.start_background_task(voice_agent.run)
+    # Start the agent in a new thread, with its own isolated asyncio event loop.
+    socketio.start_background_task(run_agent_in_background, voice_agent)
 
 @socketio.on('user_audio')
 def handle_user_audio(audio_data):
