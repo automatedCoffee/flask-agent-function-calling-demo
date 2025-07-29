@@ -55,6 +55,7 @@
         let isActive = false;
         let mediaRecorder;
         let audioContext;
+        let audioWorkletNode;
         let audioQueue = [];
         let isPlaying = false;
         let currentVoiceModel = 'aura-2-thalia-en';
@@ -64,17 +65,26 @@
         async function startAudio() {
             if (!isActive) {
                 try {
-                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                    mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
-                    mediaRecorder.ondataavailable = event => {
-                        if (event.data.size > 0 && isActive) {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: {
+                        sampleRate: 16000,
+                        channelCount: 1
+                    }});
+                    
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+                    await audioContext.audioWorklet.addModule('audio-processor.js');
+                    
+                    const microphone = audioContext.createMediaStreamSource(stream);
+                    audioWorkletNode = new AudioWorkletNode(audioContext, 'audio-processor');
+                    
+                    audioWorkletNode.port.onmessage = (event) => {
+                        if (isActive) {
                             socket.emit('user_audio', event.data);
                         }
                     };
-                    mediaRecorder.start(200); // Send audio chunks every 200ms
-
-                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
                     
+                    microphone.connect(audioWorkletNode);
+                    audioWorkletNode.connect(audioContext.destination);
+
                     socket.emit('start_voice_agent', { voiceModel: currentVoiceModel });
                     
                     startButton.textContent = 'Stop Voice Agent';
@@ -92,8 +102,8 @@
         function stopAudio() {
             if (isActive) {
                 socket.emit('stop_voice_agent');
-                if (mediaRecorder) {
-                    mediaRecorder.stop();
+                if (audioWorkletNode) {
+                    audioWorkletNode.disconnect();
                 }
                 if (audioContext) {
                     audioContext.close();

@@ -1,4 +1,4 @@
-from flask import Flask, render_template, jsonify
+from flask import Flask, render_template, jsonify, send_from_directory
 from flask_socketio import SocketIO
 import asyncio
 import websockets
@@ -40,6 +40,11 @@ logging.getLogger().handlers = []
 is_docker = os.environ.get('DOCK_CONTAINER', '').lower() == 'true'
 host = '0.0.0.0'
 port = 5000
+
+# Serve the audio processor worklet file with the correct MIME type
+@app.route('/audio-processor.js')
+def serve_audio_processor():
+    return send_from_directory('static', 'audio-processor.js', mimetype='application/javascript')
 
 class VoiceAgent:
     def __init__(self, industry="tech_support", voiceModel="aura-2-thalia-en", voiceName=""):
