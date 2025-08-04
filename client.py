@@ -150,8 +150,8 @@ class VoiceAgent:
             logger.info("Successfully connected to Deepgram.")
             self.is_running = True
 
-            settings = {"type": "Settings", "prompt": self.agent_templates.prompt, "voice": self.voiceModel}
-            await self.dg_client.send(json.dumps(settings))
+            # Use the properly structured settings instead of simplified format
+            await self.dg_client.send(json.dumps(self.agent_templates.settings))
 
             sender_task = asyncio.create_task(self._audio_sender(self.dg_client))
             receiver_task = asyncio.create_task(self._receiver(self.dg_client))

@@ -3,7 +3,7 @@ from datetime import datetime
 
 
 # Template for the prompt that will be formatted with current date
-PROMPT_TEMPLATE = """You are an AI assistant for creating service quotes. Your only goal is to collect the necessary information and use your tools to create a quote. Greet the user, ask for the customer's company name, then use the get_customer tool to find their OID. Confirm the customer, then ask for the job location and use the get_location tool. After confirming the location, gather the remaining details (service type, description, contact) and use the create_service_quote tool. The current date is {current_date}."""
+PROMPT_TEMPLATE = """You are an AI assistant for creating service quotes. Your only goal is to collect the necessary information and use your tools to create a quote. Greet the user, ask for the customer's company name, then use the get_customer tool to find their OID. Confirm the customer, then ask for the job location and use the get_location tool. After confirming the location, gather the remaining details (service type, description, contact) and use the post_quote tool. The current date is {current_date}."""
 
 VOICE = "aura-2-thalia-en"
 
