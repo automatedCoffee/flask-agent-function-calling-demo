@@ -108,7 +108,7 @@ class VoiceAgent:
                         msg_json = json.loads(message)
                         socketio.emit("agent_response", msg_json)
                         logger.info(f"Server -> Browser: {json.dumps(msg_json)}")
-                        if msg_json.get("type") == 'FunctionCall':
+                        if msg_json.get("type") == 'FunctionCallRequest':
                             await self._handle_function_call(ws, msg_json)
                     elif isinstance(message, bytes):
                         socketio.emit('agent_audio', message)
@@ -118,22 +118,26 @@ class VoiceAgent:
             logger.error(f"Receiver loop error: {e}")
 
     async def _handle_function_call(self, ws, function_call_msg):
-        function_name = function_call_msg.get('name')
-        request_id = function_call_msg.get("request_id")
+        functions = function_call_msg.get('functions', [])
         
-        if function_name in FUNCTION_MAP:
-            try:
-                arguments = json.loads(function_call_msg.get('arguments', '{}'))
-                result = FUNCTION_MAP[function_name](**arguments)
-                response = {"type": "FunctionResult", "request_id": request_id, "result": json.dumps(result)}
-            except Exception as e:
-                logger.error(f"Error executing function {function_name}: {e}")
-                response = {"type": "FunctionResult", "request_id": request_id, "result": json.dumps({"error": str(e), "success": False})}
-        else:
-            logger.error(f"Function {function_name} not found.")
-            response = {"type": "FunctionResult", "request_id": request_id, "result": json.dumps({"error": f"Function {function_name} not found.", "success": False})}
-        
-        await ws.send(json.dumps(response))
+        for function_def in functions:
+            function_name = function_def.get('name')
+            function_id = function_def.get('id')  # Use id as request_id
+            
+            if function_name in FUNCTION_MAP:
+                try:
+                    arguments = json.loads(function_def.get('arguments', '{}'))
+                    result = FUNCTION_MAP[function_name](**arguments)
+                    response = {"type": "FunctionCallResponse", "call_id": function_id, "result": result}
+                except Exception as e:
+                    logger.error(f"Error executing function {function_name}: {e}")
+                    response = {"type": "FunctionCallResponse", "call_id": function_id, "result": {"error": str(e), "success": False}}
+            else:
+                logger.error(f"Function {function_name} not found.")
+                response = {"type": "FunctionCallResponse", "call_id": function_id, "result": {"error": f"Function {function_name} not found.", "success": False}}
+            
+            logger.info(f"Function {function_name} executed, sending response: {response}")
+            await ws.send(json.dumps(response))
 
     async def run(self):
         api_key = os.environ.get("DEEPGRAM_API_KEY")
