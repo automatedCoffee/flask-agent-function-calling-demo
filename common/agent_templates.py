@@ -106,6 +106,12 @@ SETTINGS = {
             "provider": {
                 "type": "deepgram",
                 "model": VOICE
+            },
+            "voice": {
+                "name": "aura-2-thalia-en"
+            },
+            "output": {
+                "encoding": "pcm_s16le"
             }
         },
         "greeting": FIRST_MESSAGE
