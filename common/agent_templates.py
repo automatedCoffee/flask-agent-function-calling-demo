@@ -82,7 +82,7 @@ SETTINGS = {
         "output": {
             "encoding": "linear16",
             "sample_rate": AGENT_AUDIO_SAMPLE_RATE,
-            "container": "wav"
+            "container": "none"
         }
     },
     "agent": {
