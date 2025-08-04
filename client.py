@@ -127,7 +127,8 @@ class VoiceAgent:
             if function_name in FUNCTION_MAP:
                 try:
                     arguments = json.loads(function_def.get('arguments', '{}'))
-                    result = FUNCTION_MAP[function_name](**arguments)
+                    # Pass arguments as a single params dict, matching function signatures
+                    result = FUNCTION_MAP[function_name](arguments)
                     response = {"type": "FunctionCallResponse", "call_id": function_id, "result": result}
                 except Exception as e:
                     logger.error(f"Error executing function {function_name}: {e}")
