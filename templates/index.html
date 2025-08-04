@@ -171,21 +171,35 @@
                 if (isPlaying || audioQueue.length === 0) return;
                 isPlaying = true;
 
-                const audioData = audioQueue.shift();
-                audioContext.decodeAudioData(audioData.buffer, (buffer) => {
-                    const source = audioContext.createBufferSource();
-                    source.buffer = buffer;
-                    source.connect(audioContext.destination);
-                    source.start(0);
-                    source.onended = () => {
+                // Ensure audio context is resumed (browser autoplay policy)
+                if (audioContext.state === 'suspended') {
+                    audioContext.resume().then(() => {
+                        playAudioData();
+                    });
+                } else {
+                    playAudioData();
+                }
+
+                function playAudioData() {
+                    const audioData = audioQueue.shift();
+                    logMessage(`Playing audio chunk: ${audioData.length} bytes`);
+                    
+                    audioContext.decodeAudioData(audioData.buffer, (buffer) => {
+                        const source = audioContext.createBufferSource();
+                        source.buffer = buffer;
+                        source.connect(audioContext.destination);
+                        source.start(0);
+                        source.onended = () => {
+                            isPlaying = false;
+                            playNextAudioChunk(); // Play next in queue
+                        };
+                    }, (error) => {
+                        logMessage(`Error decoding audio: ${error}`, 'error');
+                        console.error('Audio decode error:', error);
                         isPlaying = false;
-                        playNextAudioChunk(); // Play next in queue
-                    };
-                }, (error) => {
-                    logMessage(`Error decoding audio: ${error}`, 'error');
-                    isPlaying = false;
-                    playNextAudioChunk();
-                });
+                        playNextAudioChunk();
+                    });
+                }
             }
 
             // --- WebSocket Logic ---
