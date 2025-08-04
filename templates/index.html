@@ -25,8 +25,15 @@
                 </label>
                 <label for="holdToTalk" class="toggle-label">Hold-to-Talk</label>
             </div>
+            <div class="controls">
+                <label class="toggle">
+                    <input type="checkbox" id="showLogs">
+                    <span class="slider"></span>
+                </label>
+                <label for="showLogs" class="toggle-label">Show Debug Logs</label>
+            </div>
             <hr>
-            <div class="logs-container syncscroll" name="log-container">
+            <div class="logs-container syncscroll" name="log-container" id="logsContainer" style="display: none;">
                 <div id="logs" class="logs"></div>
             </div>
         </div>
@@ -43,6 +50,8 @@
             const conversationDiv = document.getElementById('conversation');
             const voiceModelSelect = document.getElementById('voiceModel');
             const holdToTalkCheckbox = document.getElementById('holdToTalk');
+            const showLogsCheckbox = document.getElementById('showLogs');
+            const logsContainer = document.getElementById('logsContainer');
             const syncScrollContainers = document.querySelectorAll('.syncscroll');
 
             let socket;
@@ -134,14 +143,30 @@
                     audioWorkletNode.port.onmessage = (event) => {
                         if (socket && socket.connected && !isMuted) {
                             socket.emit('user_audio', event.data);
+                            // Log audio data being sent (less frequently)
+                            if (Math.random() < 0.01) { // 1% of chunks
+                                logMessage(`Sending user audio: ${event.data.byteLength} bytes`);
+                            }
+                        } else if (isMuted) {
+                            // Log when audio is muted (less frequently)
+                            if (Math.random() < 0.001) { // 0.1% of chunks
+                                logMessage(`Audio muted - Hold-to-Talk: ${holdToTalkActive ? 'ON' : 'OFF'}`);
+                            }
                         }
                     };
                     
                     logMessage('Audio pipeline ready.');
+                    logMessage(`Microphone connected - Sample rate: ${audioContext.sampleRate}Hz`);
+                    logMessage(`Audio mode: ${holdToTalkActive ? 'Hold-to-talk (Press Space)' : 'Continuous listening'}`);
                     connectSocket();
 
                 } catch (error) {
                     logMessage(`Failed to start audio: ${error}`, 'error');
+                    if (error.name === 'NotAllowedError') {
+                        logMessage('Microphone permission denied. Please allow microphone access and try again.', 'error');
+                    } else if (error.name === 'NotFoundError') {
+                        logMessage('No microphone found. Please connect a microphone and try again.', 'error');
+                    }
                     setStatus('Error');
                     isActive = false;
                 }
@@ -248,6 +273,14 @@
                     switch (data.type) {
                         case 'Welcome':
                             setStatus('Agent Ready');
+                            // Show current audio mode status
+                            if (holdToTalkActive) {
+                                logMessage('Hold-to-talk mode - Press and hold Space to speak');
+                                setStatus('Agent Ready - Press Space to talk');
+                            } else {
+                                logMessage('Continuous listening mode - Speak anytime');
+                                setStatus('Agent Ready - Listening...');
+                            }
                             break;
                         case 'ConversationText':
                             addConversationMessage('assistant', data.content);
@@ -281,8 +314,21 @@
                 logMessage(`Hold-to-Talk ${holdToTalkActive ? 'activated' : 'deactivated'}.`);
                 if (!holdToTalkActive) {
                     isMuted = false; // Unmute if mode is turned off
+                    setStatus('Agent Ready - Continuous listening');
+                    logMessage('Continuous audio mode enabled');
                 } else {
                     isMuted = true; // Mute by default in hold-to-talk mode
+                    setStatus('Agent Ready - Press Space to talk');
+                    logMessage('Hold-to-talk mode enabled - Press and hold Space to speak');
+                }
+            });
+
+            showLogsCheckbox.addEventListener('change', (e) => {
+                if (e.target.checked) {
+                    logsContainer.style.display = 'block';
+                    logMessage('Debug logs are now visible');
+                } else {
+                    logsContainer.style.display = 'none';
                 }
             });
 
