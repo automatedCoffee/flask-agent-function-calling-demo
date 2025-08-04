@@ -174,31 +174,51 @@
                 // Ensure audio context is resumed (browser autoplay policy)
                 if (audioContext.state === 'suspended') {
                     audioContext.resume().then(() => {
-                        playAudioData();
+                        playRawPCM();
                     });
                 } else {
-                    playAudioData();
+                    playRawPCM();
                 }
 
-                function playAudioData() {
+                function playRawPCM() {
                     const audioData = audioQueue.shift();
                     logMessage(`Playing audio chunk: ${audioData.length} bytes`);
                     
-                    audioContext.decodeAudioData(audioData.buffer, (buffer) => {
+                    try {
+                        // Convert raw PCM data to audio buffer directly
+                        const sampleRate = 24000; // Match the agent audio sample rate
+                        const numSamples = audioData.length / 2; // 16-bit = 2 bytes per sample
+                        
+                        // Create audio buffer manually
+                        const audioBuffer = audioContext.createBuffer(1, numSamples, sampleRate);
+                        const channelData = audioBuffer.getChannelData(0);
+                        
+                        // Convert bytes to float32 samples
+                        const dataView = new DataView(audioData.buffer);
+                        for (let i = 0; i < numSamples; i++) {
+                            // Read 16-bit signed integer and convert to float (-1 to 1)
+                            const sample = dataView.getInt16(i * 2, true); // little-endian
+                            channelData[i] = sample / 32768.0;
+                        }
+                        
+                        // Play the buffer
                         const source = audioContext.createBufferSource();
-                        source.buffer = buffer;
+                        source.buffer = audioBuffer;
                         source.connect(audioContext.destination);
                         source.start(0);
                         source.onended = () => {
                             isPlaying = false;
                             playNextAudioChunk(); // Play next in queue
                         };
-                    }, (error) => {
-                        logMessage(`Error decoding audio: ${error}`, 'error');
-                        console.error('Audio decode error:', error);
+                        
+                        logMessage(`Successfully played ${numSamples} samples`);
+                        
+                    } catch (error) {
+                        logMessage(`Error playing raw PCM: ${error}`, 'error');
+                        console.error('Raw PCM playback error:', error);
                         isPlaying = false;
                         playNextAudioChunk();
-                    });
+                    }
                 }
             }
 
