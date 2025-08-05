@@ -65,7 +65,7 @@
             let holdToTalkActive = false;
             let nextPlayTime = 0; // For continuous audio scheduling
             let lastAudioSendTime = 0;
-            const AUDIO_SEND_INTERVAL = 100; // Send audio every 100ms maximum
+            const AUDIO_SEND_INTERVAL = 20; // Send audio every 20ms (was 100ms - too aggressive)
 
             // --- UI and Logging ---
 
@@ -145,15 +145,13 @@
 
                     audioWorkletNode.port.onmessage = (event) => {
                         if (socket && socket.connected && !isMuted) {
-                            // Time-based throttling to prevent SocketIO packet overload
-                            const now = Date.now();
-                            if (now - lastAudioSendTime >= AUDIO_SEND_INTERVAL) {
+                            // Very light throttling to prevent SocketIO overload while maintaining speech quality
+                            if (Math.random() < 0.85) { // Send 85% of audio chunks
                                 socket.emit('user_audio', event.data);
-                                lastAudioSendTime = now;
                                 
                                 // Log audio data being sent (occasionally)
                                 if (Math.random() < 0.01) { // 1% of chunks
-                                    logMessage(`Sending user audio: ${event.data.byteLength} bytes at ${now}`);
+                                    logMessage(`Sending user audio: ${event.data.byteLength} bytes`);
                                 }
                             }
                         } else if (isMuted) {
@@ -207,63 +205,57 @@
             }
 
             function playNextAudioChunk() {
-                if (audioQueue.length === 0) return;
+                if (audioQueue.length === 0 || !audioContext) return;
 
-                // Ensure audio context is resumed (browser autoplay policy)
+                const audioData = audioQueue.shift();
+                
                 if (audioContext.state === 'suspended') {
                     audioContext.resume().then(() => {
-                        scheduleAudioChunks();
+                        playRawPCM(audioData);
                     });
                 } else {
-                    scheduleAudioChunks();
+                    playRawPCM(audioData);
                 }
+            }
 
-                function scheduleAudioChunks() {
-                    // Process all available chunks to create smooth playback
-                    while (audioQueue.length > 0) {
-                        const audioData = audioQueue.shift();
-                        
-                        try {
-                            // Convert raw PCM data to audio buffer directly
-                            const sampleRate = 24000; // Match the agent audio sample rate
-                            const numSamples = audioData.length / 2; // 16-bit = 2 bytes per sample
-                            
-                            // Create audio buffer manually
-                            const audioBuffer = audioContext.createBuffer(1, numSamples, sampleRate);
-                            const channelData = audioBuffer.getChannelData(0);
-                            
-                            // Convert bytes to float32 samples
-                            const dataView = new DataView(audioData.buffer);
-                            for (let i = 0; i < numSamples; i++) {
-                                // Read 16-bit signed integer and convert to float (-1 to 1)
-                                const sample = dataView.getInt16(i * 2, true); // little-endian
-                                channelData[i] = sample / 32768.0;
-                            }
-                            
-                            // Schedule the buffer for continuous playback
-                            const source = audioContext.createBufferSource();
-                            source.buffer = audioBuffer;
-                            source.connect(audioContext.destination);
-                            
-                            // Calculate when to start this chunk for smooth playback
-                            const currentTime = audioContext.currentTime;
-                            if (nextPlayTime < currentTime) {
-                                nextPlayTime = currentTime;
-                            }
-                            
-                            source.start(nextPlayTime);
-                            nextPlayTime += audioBuffer.duration; // Schedule next chunk right after this one
-                            
-                            // Log less frequently
-                            if (Math.random() < 0.1) {
-                                logMessage(`Playing audio chunk: ${numSamples} samples, scheduled at ${nextPlayTime.toFixed(3)}s`);
-                            }
-                            
-                        } catch (error) {
-                            logMessage(`Error playing raw PCM: ${error}`, 'error');
-                            console.error('Raw PCM playback error:', error);
-                        }
+            function playRawPCM(audioData) {
+                try {
+                    // Convert Uint8Array to Int16Array (16-bit PCM)
+                    const numSamples = audioData.length / 2;
+                    const pcmData = new Int16Array(audioData.buffer, audioData.byteOffset, numSamples);
+                    
+                    // Create AudioBuffer
+                    const audioBuffer = audioContext.createBuffer(1, numSamples, 24000);
+                    const channelData = audioBuffer.getChannelData(0);
+                    
+                    // Convert Int16 to Float32 and fill the buffer
+                    for (let i = 0; i < numSamples; i++) {
+                        const sample = pcmData[i];
+                        channelData[i] = sample / 32768.0;
                     }
+                    
+                    // Schedule the buffer for continuous playback
+                    const source = audioContext.createBufferSource();
+                    source.buffer = audioBuffer;
+                    source.connect(audioContext.destination);
+                    
+                    // Calculate when to start this chunk for smooth playback
+                    const currentTime = audioContext.currentTime;
+                    if (nextPlayTime <= currentTime) {
+                        nextPlayTime = currentTime + 0.01; // Small buffer to avoid glitches
+                    }
+                    
+                    source.start(nextPlayTime);
+                    nextPlayTime += audioBuffer.duration; // Schedule next chunk right after this one
+                    
+                    // Log less frequently
+                    if (Math.random() < 0.05) { // 5% of chunks (was 10%)
+                        logMessage(`Playing audio chunk: ${numSamples} samples, scheduled at ${nextPlayTime.toFixed(3)}s`);
+                    }
+                    
+                } catch (error) {
+                    logMessage(`Error playing raw PCM: ${error}`, 'error');
+                    console.error('Raw PCM playback error:', error);
                 }
             }
 

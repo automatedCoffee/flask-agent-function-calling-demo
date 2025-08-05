@@ -19,14 +19,14 @@ load_dotenv()
 app = Flask(__name__, static_folder="./static", static_url_path="/")
 # Explicitly use the 'threading' async mode. This is the most robust and
 # avoids conflicts with the asyncio code running in the background.
-# Add larger packet size limits to prevent "Too many packets in payload" errors
+# Add even larger packet size limits to prevent "Too many packets in payload" errors
 socketio = SocketIO(
     app, 
     cors_allowed_origins="*", 
     async_mode='threading',
-    max_http_buffer_size=16*1024*1024,  # 16MB buffer
-    ping_timeout=120,  # 2 minutes
-    ping_interval=25   # 25 seconds
+    max_http_buffer_size=32*1024*1024,  # 32MB buffer (was 16MB)
+    ping_timeout=180,  # 3 minutes (was 2 minutes)
+    ping_interval=30   # 30 seconds (was 25 seconds)
 )
 
 # --- Logging Setup ---
