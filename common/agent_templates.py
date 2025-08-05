@@ -150,7 +150,8 @@ class AgentTemplates:
         self.agent_audio_bytes_per_sec = AGENT_AUDIO_BYTES_PER_SEC
 
         # Set up the settings with the configured voice model and prompt
-        self.settings["agent"]["speak"]["provider"]["model"] = self.voiceModel
+        # Use a more basic voice model that should work reliably
+        self.settings["agent"]["speak"]["provider"]["model"] = "aura-asteria-en"
         self.settings["agent"]["think"]["prompt"] = self.prompt
         self.settings["agent"]["greeting"] = FIRST_MESSAGE
 

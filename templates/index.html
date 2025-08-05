@@ -64,6 +64,8 @@
             let isMuted = false;
             let holdToTalkActive = false;
             let nextPlayTime = 0; // For continuous audio scheduling
+            let lastAudioSendTime = 0;
+            const AUDIO_SEND_INTERVAL = 100; // Send audio every 100ms maximum
 
             // --- UI and Logging ---
 
@@ -143,22 +145,25 @@
 
                     audioWorkletNode.port.onmessage = (event) => {
                         if (socket && socket.connected && !isMuted) {
-                            // Minimal throttling to prevent SocketIO overload while maintaining speech quality
-                            if (Math.random() < 0.9) { // Send 90% of audio chunks (was 80%)
+                            // Time-based throttling to prevent SocketIO packet overload
+                            const now = Date.now();
+                            if (now - lastAudioSendTime >= AUDIO_SEND_INTERVAL) {
                                 socket.emit('user_audio', event.data);
-                            }
-                            // Log audio data being sent (more frequently for debugging)
-                            if (Math.random() < 0.05) { // 5% of chunks (increased from 1%)
-                                logMessage(`Sending user audio: ${event.data.byteLength} bytes, muted: ${isMuted}`);
+                                lastAudioSendTime = now;
+                                
+                                // Log audio data being sent (occasionally)
+                                if (Math.random() < 0.01) { // 1% of chunks
+                                    logMessage(`Sending user audio: ${event.data.byteLength} bytes at ${now}`);
+                                }
                             }
                         } else if (isMuted) {
-                            // Log when audio is muted (more frequently for debugging)
-                            if (Math.random() < 0.01) { // 1% of chunks (increased from 0.1%)
+                            // Log when audio is muted (less frequently)
+                            if (Math.random() < 0.005) { // 0.5% of chunks
                                 logMessage(`Audio muted - Hold-to-Talk: ${holdToTalkActive ? 'ON' : 'OFF'}`);
                             }
                         } else if (!socket || !socket.connected) {
                             // Log connection issues
-                            if (Math.random() < 0.01) {
+                            if (Math.random() < 0.005) {
                                 logMessage(`Audio not sent - Socket connected: ${socket?.connected || false}`);
                             }
                         }
