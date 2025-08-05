@@ -25,6 +25,11 @@
                 </label>
                 <label for="showLogs" class="toggle-label">Show Debug Logs</label>
             </div>
+            <div class="controls">
+                <button id="testButton" style="padding: 10px; margin: 5px; background: #28a745; color: white; border: none; border-radius: 5px;">
+                    Test Button (3s)
+                </button>
+            </div>
             <hr>
             <div class="logs-container syncscroll" name="log-container" id="logsContainer" style="display: none;">
                 <div id="logs" class="logs"></div>
@@ -52,6 +57,7 @@
             const showLogsCheckbox = document.getElementById('showLogs');
             const logsContainer = document.getElementById('logsContainer');
             const speakButton = document.getElementById('speakButton');
+            const testButton = document.getElementById('testButton');
 
             let socket = null;
             let audioContext = null;
@@ -322,7 +328,13 @@
                 }
 
                 logMessage('📡 Connecting to socket...');
-                socket = io();
+                socket = io({
+                    transports: ['websocket', 'polling'], // Try WebSocket first, fallback to polling
+                    upgrade: true,
+                    rememberUpgrade: true,
+                    timeout: 20000,
+                    forceNew: true
+                });
 
                 socket.on('connect', () => {
                     logMessage('📡 Socket connected successfully.');
@@ -463,6 +475,23 @@
                 }, 5000);
             };
             
+            window.testButtonPress = function() {
+                logMessage('🧪 MOBILE TEST: Simulating button press for 3 seconds');
+                startSpeaking();
+                setTimeout(() => {
+                    stopSpeaking();
+                }, 3000);
+            };
+            
+            window.forceSocketConnect = function() {
+                logMessage('🔌 FORCE SOCKET: Manually connecting socket');
+                if (!socket) {
+                    connectSocket();
+                } else {
+                    socket.connect();
+                }
+            };
+            
             window.checkAudio = function() {
                 logMessage(`🎙️ AUDIO STATUS:`);
                 logMessage(`  - audioContext: ${audioContext ? 'EXISTS' : 'NULL'}`);
@@ -568,7 +597,7 @@
                 }
             }
 
-            // Mouse events
+            // Mouse events  
             speakButton.addEventListener('mousedown', (e) => {
                 e.preventDefault();
                 logMessage(`🖱️ Mouse down event triggered`);
@@ -585,17 +614,32 @@
                 stopSpeaking();
             });
 
-            // Touch events for mobile
+            // Touch events for mobile (FIXED)
             speakButton.addEventListener('touchstart', (e) => {
                 e.preventDefault();
+                e.stopPropagation();
                 logMessage(`📱 Touch start event triggered`);
                 startSpeaking();
-            });
+            }, { passive: false });
 
             speakButton.addEventListener('touchend', (e) => {
                 e.preventDefault();
+                e.stopPropagation();
                 logMessage(`📱 Touch end event triggered`);
                 stopSpeaking();
+            }, { passive: false });
+
+            speakButton.addEventListener('touchcancel', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                logMessage(`📱 Touch cancel event triggered`);
+                stopSpeaking();
+            }, { passive: false });
+
+            // Additional click event for debugging
+            speakButton.addEventListener('click', (e) => {
+                e.preventDefault();
+                logMessage(`👆 Click event triggered (this should NOT be used for speaking)`);
             });
 
             // Initialize speak button state
@@ -631,6 +675,11 @@
                 } else {
                     logsContainer.style.display = 'none';
                 }
+            });
+
+            testButton.addEventListener('click', () => {
+                logMessage('🧪 TEST BUTTON: Manual 3-second test started');
+                testButtonPress();
             });
 
             fetchVoiceModels();
