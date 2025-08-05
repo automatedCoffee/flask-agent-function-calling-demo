@@ -20,7 +20,7 @@ def test_get_customer():
         {"company_name": "Epic"},
         {"company_name": "Acme"},
         {"company_name": "Globex"},
-        {"company_name": "NonExistent Company"}
+        {"company_name": "NonExistent Company XYZ123"}  # This should return an error, not mock data
     ]
     
     for i, params in enumerate(test_cases, 1):
@@ -28,6 +28,13 @@ def test_get_customer():
         try:
             result = get_customer(params)
             print(f"Result: {json.dumps(result, indent=2)}")
+            
+            # Check if this is an error case
+            if not result.get('success', True):
+                print(f"✅ Correctly returned error for non-existent customer")
+            elif result.get('success'):
+                print(f"✅ Successfully found customer: {result.get('printCustomerName')}")
+                
         except Exception as e:
             print(f"ERROR: {e}")
 
@@ -38,7 +45,8 @@ def test_get_location():
     test_cases = [
         {"customer_oid": "mock-epic-001", "address_string": "123 Main"},
         {"customer_oid": "mock-epic-001", "address_string": "warehouse"},
-        {"customer_oid": "mock-epic-001", "address_string": "research"}
+        {"customer_oid": "mock-epic-001", "address_string": "research"},
+        {"customer_oid": "mock-epic-001", "address_string": "NonExistent Address XYZ123"}  # Should return error
     ]
     
     for i, params in enumerate(test_cases, 1):
@@ -46,6 +54,13 @@ def test_get_location():
         try:
             result = get_location(params)
             print(f"Result: {json.dumps(result, indent=2)}")
+            
+            # Check if this is an error case  
+            if not result.get('success', True):
+                print(f"✅ Correctly returned error for non-existent location")
+            elif result.get('success'):
+                print(f"✅ Successfully found location: {result.get('PrintAddressString')}")
+                
         except Exception as e:
             print(f"ERROR: {e}")
 

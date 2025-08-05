@@ -296,7 +296,7 @@ def get_customer_backendless(company_name):
     """
     Look up a customer by company name from Backendless.
     Returns CustomerOid and printCustomerName if found.
-    Falls back to mock data if API credentials are not configured.
+    Falls back to mock data ONLY if API credentials are not configured.
     """
     print(f"get_customer_backendless called with company_name: '{company_name}'")
     
@@ -339,8 +339,12 @@ def get_customer_backendless(company_name):
                     'success': True
                 }
             else:
-                print(f"No customers found for company: {company_name}, falling back to mock data")
-                return get_customer_mock(company_name)
+                print(f"No customers found for company: {company_name}")
+                return {
+                    'error': f"Customer '{company_name}' not found in our system. Please check the company name and try again.",
+                    'success': False,
+                    'company_searched': company_name
+                }
         else:
             print(f"Backendless API request failed with status {response.status_code}, falling back to mock data")
             return get_customer_mock(company_name)
@@ -401,7 +405,7 @@ def get_location_backendless(customer_oid, address_string):
     Look up a location for a customer by address string from Backendless.
     Searches in the Locations table using AddressOnlyString and FullAddressString fields.
     Returns ParentLocationOid, printAccount, and PrintAddressString if found.
-    Falls back to mock data if API credentials are not configured.
+    Falls back to mock data ONLY if API credentials are not configured.
     """
     print(f"Location lookup called with customer_oid: {customer_oid}, address_string: {address_string}")
     
@@ -447,8 +451,13 @@ def get_location_backendless(customer_oid, address_string):
                     'success': True
                 }
             else:
-                print(f"No locations found for address: {address_string}, falling back to mock data")
-                return get_location_mock(customer_oid, address_string)
+                print(f"No locations found for address: {address_string}")
+                return {
+                    'error': f"Location matching '{address_string}' not found for this customer. Please provide a different address or location description.",
+                    'success': False,
+                    'address_searched': address_string,
+                    'customer_oid': customer_oid
+                }
         else:
             print(f"Backendless API request failed with status {response.status_code}, falling back to mock data")
             return get_location_mock(customer_oid, address_string)

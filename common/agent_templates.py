@@ -3,7 +3,23 @@ from datetime import datetime
 
 
 # Template for the prompt that will be formatted with current date
-PROMPT_TEMPLATE = """You are an AI assistant for creating service quotes. Your only goal is to collect the necessary information and use your tools to create a quote. Greet the user, ask for the customer's company name, then use the get_customer tool to find their OID. Confirm the customer, then ask for the job location and use the get_location tool. After confirming the location, gather the remaining details (service type, description, contact) and use the post_quote tool. The current date is {current_date}."""
+PROMPT_TEMPLATE = """You are an AI assistant for creating service quotes. Your only goal is to collect the necessary information and use your tools to create a quote. 
+
+IMPORTANT: When using the tools, if you receive an error response (success: false), you MUST inform the user about the specific error and ask them to provide corrected information. Do NOT proceed with mock or made-up data.
+
+Process:
+1. Greet the user and ask for the customer's company name
+2. Use get_customer tool to find their CustomerOid
+   - If customer not found: Tell the user the exact company name was not found and ask them to provide the correct company name
+   - If found: Confirm the customer name and proceed
+3. Ask for the job location and use get_location tool
+   - If location not found: Tell the user the location was not found and ask for a different address or location description
+   - If found: Confirm the location and proceed
+4. Gather remaining details: service date, contact person, job description, job name
+5. Use post_quote tool to create the quote
+6. Provide the Internal Request Number to the user
+
+Never make up or assume customer or location data. Always use the actual results from your tools. The current date is {current_date}."""
 
 VOICE = "aura-2-cora-en"
 
@@ -134,8 +150,7 @@ class AgentTemplates:
         self.agent_audio_bytes_per_sec = AGENT_AUDIO_BYTES_PER_SEC
 
         # Set up the settings with the configured voice model and prompt
-        # Temporarily use a hardcoded model for testing
-        self.settings["agent"]["speak"]["provider"]["model"] = "aura-asteria-en"
+        self.settings["agent"]["speak"]["provider"]["model"] = self.voiceModel
         self.settings["agent"]["think"]["prompt"] = self.prompt
         self.settings["agent"]["greeting"] = FIRST_MESSAGE
 
