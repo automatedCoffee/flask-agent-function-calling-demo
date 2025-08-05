@@ -60,6 +60,7 @@
             let isActive = false;
             let isMuted = true; // Start muted, only speak when button is pressed
             let isAgentSpeaking = false; // Track when agent is playing audio
+            let isAgentProcessing = false; // Track when agent is processing user input
             let audioQueue = [];
             let nextPlayTime = 0; // For continuous audio scheduling
             let lastAudioSendTime = 0;
@@ -67,11 +68,14 @@
 
             // --- UI and Logging ---
 
+            function setStatus(message) {
+                statusDiv.textContent = `Status: ${message}`;
+            }
+
             function logMessage(message, type = 'info') {
-                const logEntry = document.createElement('div');
-                logEntry.className = `log-entry log-${type}`;
-                logEntry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
-                logsDiv.appendChild(logEntry);
+                const timestamp = new Date().toLocaleTimeString();
+                const logClass = type === 'error' ? 'log-error' : type === 'warn' ? 'log-warn' : type === 'user' ? 'log-user' : 'log-info';
+                logsDiv.innerHTML += `<div class="${logClass}">[${timestamp}] ${message}</div>`;
                 logsDiv.scrollTop = logsDiv.scrollHeight;
             }
 
@@ -81,10 +85,6 @@
                 messageBubble.textContent = text;
                 conversationDiv.appendChild(messageBubble);
                 conversationDiv.scrollTop = conversationDiv.scrollHeight;
-            }
-
-            function setStatus(text) {
-                statusDiv.textContent = `Status: ${text}`;
             }
 
             // --- Scroll Syncing ---
@@ -174,6 +174,10 @@
             function stopAudio() {
                 if (!isActive) return;
                 isActive = false;
+                isAgentSpeaking = false;
+                isAgentProcessing = false;
+                isMuted = true;
+                
                 logMessage('Stopping audio pipeline...');
                 if (socket) {
                     socket.emit('stop_voice_agent');
@@ -186,23 +190,32 @@
                     audioContext.close();
                 }
                 audioQueue = [];
-                isPlaying = false;
+                nextPlayTime = 0;
+                
                 setStatus('Inactive');
                 startButton.textContent = 'Start Voice Agent';
+                
+                // Reset speak button to disabled state
+                speakButton.disabled = true;
+                speakButton.style.opacity = '0.6';
+                speakButton.querySelector('.speak-button-text').textContent = 'Hold to Speak';
+                speakButton.style.background = 'linear-gradient(135deg, #007bff, #0056b3)';
             }
 
             function playNextAudioChunk() {
                 if (audioQueue.length === 0 || !audioContext) {
-                    // Re-enable speak button when agent finishes speaking
+                    // Agent finished speaking - enable button for next user turn
                     if (isAgentSpeaking) {
                         setTimeout(() => {
                             if (audioQueue.length === 0) { // Double check after delay
                                 isAgentSpeaking = false;
-                                speakButton.disabled = false;
-                                speakButton.style.opacity = '1';
-                                logMessage('Agent finished speaking - Hold to Speak enabled');
+                                logMessage('Agent finished speaking');
+                                setStatus('Agent Ready - Press button to speak');
+                                speakButton.querySelector('.speak-button-text').textContent = 'Hold to Speak';
+                                speakButton.style.background = 'linear-gradient(135deg, #007bff, #0056b3)';
+                                updateSpeakButtonState(); // Re-enable button
                             }
-                        }, 500); // Small delay to ensure all audio is finished
+                        }, 800); // Longer delay to ensure all audio is finished and prevent cutoff
                     }
                     return;
                 }
@@ -242,14 +255,14 @@
                     // Calculate when to start this chunk for smooth playback
                     const currentTime = audioContext.currentTime;
                     if (nextPlayTime <= currentTime) {
-                        nextPlayTime = currentTime + 0.01; // Small buffer to avoid glitches
+                        nextPlayTime = currentTime + 0.05; // Larger buffer (50ms) to prevent cutoff
                     }
                     
                     source.start(nextPlayTime);
                     nextPlayTime += audioBuffer.duration; // Schedule next chunk right after this one
                     
                     // Log less frequently
-                    if (Math.random() < 0.05) { // 5% of chunks (was 10%)
+                    if (Math.random() < 0.02) { // 2% of chunks
                         logMessage(`Playing audio chunk: ${numSamples} samples, scheduled at ${nextPlayTime.toFixed(3)}s`);
                     }
                     
@@ -285,60 +298,53 @@
                     switch (data.type) {
                         case 'Welcome':
                             setStatus('Agent Ready');
-                            // Show current audio mode status
-                            logMessage('Agent ready - Use Press to Speak button');
-                            setStatus('Agent Ready - Press button to speak');
-                            // Enable the speak button when agent is ready
-                            speakButton.disabled = false;
+                            logMessage('Agent ready - waiting for greeting to finish');
+                            // Don't enable button yet - wait for greeting audio to finish
                             break;
                         case 'ConversationText':
                             addConversationMessage('assistant', data.content);
+                            // Agent is responding, so it's no longer processing user input
+                            isAgentProcessing = false;
                             break;
                         case 'Error':
                             logMessage(`Agent Error: ${data.description}`, 'error');
                             setStatus('Error');
+                            isAgentProcessing = false;
+                            updateSpeakButtonState();
                             break;
                     }
                 });
 
                 socket.on('agent_audio', (chunk) => {
                     audioQueue.push(new Uint8Array(chunk));
-                    // Disable speak button when agent starts speaking
+                    // Start agent speaking if not already
                     if (!isAgentSpeaking) {
                         isAgentSpeaking = true;
-                        speakButton.disabled = true;
-                        speakButton.style.opacity = '0.6';
-                        logMessage('Agent speaking - Hold to Speak disabled');
-                        // Stop user speaking if they were speaking
-                        stopSpeaking();
+                        isAgentProcessing = false; // No longer processing since agent is responding
+                        logMessage('Agent speaking...');
+                        setStatus('Agent speaking...');
+                        updateSpeakButtonState(); // Disable button while agent speaks
                     }
                     playNextAudioChunk();
                 });
             }
 
-            // --- Event Listeners ---
-
-            startButton.addEventListener('click', () => {
-                if (isActive) {
-                    stopAudio();
+            // Function to update speak button state based on current conditions
+            function updateSpeakButtonState() {
+                const shouldEnable = isActive && !isAgentSpeaking && !isAgentProcessing;
+                speakButton.disabled = !shouldEnable;
+                speakButton.style.opacity = shouldEnable ? '1' : '0.6';
+                
+                if (shouldEnable) {
+                    logMessage('Hold to Speak button enabled');
                 } else {
-                    startAudio();
-                    startButton.textContent = 'Stop Voice Agent';
+                    logMessage(`Hold to Speak button disabled - Active: ${isActive}, Speaking: ${isAgentSpeaking}, Processing: ${isAgentProcessing}`);
                 }
-            });
-
-            showLogsCheckbox.addEventListener('change', (e) => {
-                if (e.target.checked) {
-                    logsContainer.style.display = 'block';
-                    logMessage('Debug logs are now visible');
-                } else {
-                    logsContainer.style.display = 'none';
-                }
-            });
+            }
 
             // Press-and-hold functionality for speak button
             function startSpeaking() {
-                if (!isAgentSpeaking && isActive) {
+                if (!isAgentSpeaking && !isAgentProcessing && isActive) {
                     isMuted = false;
                     logMessage('Speaking...', 'user');
                     setStatus('Listening...');
@@ -348,11 +354,15 @@
             }
 
             function stopSpeaking() {
-                isMuted = true;
-                logMessage('Stopped speaking.');
-                setStatus('Agent Ready - Press button to speak');
-                speakButton.querySelector('.speak-button-text').textContent = 'Hold to Speak';
-                speakButton.style.background = 'linear-gradient(135deg, #007bff, #0056b3)';
+                if (!isMuted) { // Only if we were actually speaking
+                    isMuted = true;
+                    isAgentProcessing = true; // Agent is now processing
+                    logMessage('Stopped speaking - Agent processing...');
+                    setStatus('Agent processing...');
+                    speakButton.querySelector('.speak-button-text').textContent = 'Processing...';
+                    speakButton.style.background = 'linear-gradient(135deg, #ffc107, #e0a800)';
+                    updateSpeakButtonState(); // Disable button while processing
+                }
             }
 
             // Mouse events
@@ -378,6 +388,31 @@
             speakButton.addEventListener('touchend', (e) => {
                 e.preventDefault();
                 stopSpeaking();
+            });
+
+            // Initialize speak button state
+            speakButton.disabled = true;
+            speakButton.style.opacity = '0.6';
+            logMessage('Hold to Speak button initialized (disabled)');
+
+            // --- Other Event Listeners ---
+
+            startButton.addEventListener('click', () => {
+                if (isActive) {
+                    stopAudio();
+                } else {
+                    startAudio();
+                    startButton.textContent = 'Stop Voice Agent';
+                }
+            });
+
+            showLogsCheckbox.addEventListener('change', (e) => {
+                if (e.target.checked) {
+                    logsContainer.style.display = 'block';
+                    logMessage('Debug logs are now visible');
+                } else {
+                    logsContainer.style.display = 'none';
+                }
             });
 
             fetchVoiceModels();
