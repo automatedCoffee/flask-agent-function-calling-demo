@@ -143,7 +143,10 @@
 
                     audioWorkletNode.port.onmessage = (event) => {
                         if (socket && socket.connected && !isMuted) {
-                            socket.emit('user_audio', event.data);
+                            // Throttle audio sending to prevent SocketIO overload
+                            if (Math.random() < 0.5) { // Send only 50% of audio chunks
+                                socket.emit('user_audio', event.data);
+                            }
                             // Log audio data being sent (less frequently)
                             if (Math.random() < 0.01) { // 1% of chunks
                                 logMessage(`Sending user audio: ${event.data.byteLength} bytes`);

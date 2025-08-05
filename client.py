@@ -129,13 +129,26 @@ class VoiceAgent:
                     arguments = json.loads(function_def.get('arguments', '{}'))
                     # Pass arguments as a single params dict, matching function signatures
                     result = FUNCTION_MAP[function_name](arguments)
-                    response = {"type": "FunctionCallResponse", "call_id": function_id, "result": result}
+                    # Format response to match Deepgram's expected structure
+                    response = {
+                        "type": "FunctionCallResponse", 
+                        "call_id": function_id, 
+                        "result": json.dumps(result)  # Stringify the result
+                    }
                 except Exception as e:
                     logger.error(f"Error executing function {function_name}: {e}")
-                    response = {"type": "FunctionCallResponse", "call_id": function_id, "result": {"error": str(e), "success": False}}
+                    response = {
+                        "type": "FunctionCallResponse", 
+                        "call_id": function_id, 
+                        "result": json.dumps({"error": str(e), "success": False})
+                    }
             else:
                 logger.error(f"Function {function_name} not found.")
-                response = {"type": "FunctionCallResponse", "call_id": function_id, "result": {"error": f"Function {function_name} not found.", "success": False}}
+                response = {
+                    "type": "FunctionCallResponse", 
+                    "call_id": function_id, 
+                    "result": json.dumps({"error": f"Function {function_name} not found.", "success": False})
+                }
             
             logger.info(f"Function {function_name} executed, sending response: {response}")
             await ws.send(json.dumps(response))
