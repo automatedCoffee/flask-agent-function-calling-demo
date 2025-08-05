@@ -7,6 +7,10 @@ import pathlib
 import requests
 import os
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment variables first
+load_dotenv()
 
 # Configuration
 BACKENDLESS_API_URL = os.getenv('BACKENDLESS_API_URL', 'https://api.backendless.com')
