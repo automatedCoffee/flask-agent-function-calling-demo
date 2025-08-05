@@ -143,18 +143,23 @@
 
                     audioWorkletNode.port.onmessage = (event) => {
                         if (socket && socket.connected && !isMuted) {
-                            // Throttle audio sending to prevent SocketIO overload
-                            if (Math.random() < 0.5) { // Send only 50% of audio chunks
+                            // Light throttling to prevent SocketIO overload while maintaining speech quality
+                            if (Math.random() < 0.8) { // Send 80% of audio chunks (was 50%)
                                 socket.emit('user_audio', event.data);
                             }
-                            // Log audio data being sent (less frequently)
-                            if (Math.random() < 0.01) { // 1% of chunks
-                                logMessage(`Sending user audio: ${event.data.byteLength} bytes`);
+                            // Log audio data being sent (more frequently for debugging)
+                            if (Math.random() < 0.05) { // 5% of chunks (increased from 1%)
+                                logMessage(`Sending user audio: ${event.data.byteLength} bytes, muted: ${isMuted}`);
                             }
                         } else if (isMuted) {
-                            // Log when audio is muted (less frequently)
-                            if (Math.random() < 0.001) { // 0.1% of chunks
+                            // Log when audio is muted (more frequently for debugging)
+                            if (Math.random() < 0.01) { // 1% of chunks (increased from 0.1%)
                                 logMessage(`Audio muted - Hold-to-Talk: ${holdToTalkActive ? 'ON' : 'OFF'}`);
+                            }
+                        } else if (!socket || !socket.connected) {
+                            // Log connection issues
+                            if (Math.random() < 0.01) {
+                                logMessage(`Audio not sent - Socket connected: ${socket?.connected || false}`);
                             }
                         }
                     };
