@@ -332,18 +332,32 @@
                     logMessage(`📡 Socket disconnected: ${reason}`, 'warn');
                     setStatus('Disconnected - Reconnecting...');
                     
-                    // Force reconnection after a short delay
-                    setTimeout(() => {
-                        if (!socket.connected) {
-                            logMessage('📡 Attempting to reconnect...');
-                            socket.connect();
-                        }
-                    }, 2000);
+                    // Immediately try to reconnect if we were in the middle of something
+                    if (isAgentProcessing || !isMuted) {
+                        logMessage('🚨 CRITICAL: Socket disconnected while active, immediate reconnect');
+                        socket.connect();
+                    } else {
+                        // Normal reconnection after a short delay
+                        setTimeout(() => {
+                            if (!socket.connected) {
+                                logMessage('📡 Attempting to reconnect...');
+                                socket.connect();
+                            }
+                        }, 1000); // Reduced from 2000ms
+                    }
                 });
 
                 socket.on('connect_error', (error) => {
                     logMessage(`📡 Socket connection error: ${error}`, 'error');
-                    setStatus('Connection Error');
+                    setStatus('Connection Error - Retrying...');
+                    
+                    // Retry connection after short delay
+                    setTimeout(() => {
+                        if (!socket.connected) {
+                            logMessage('🔄 Retrying connection after error...');
+                            socket.connect();
+                        }
+                    }, 2000);
                 });
 
                 socket.on('reconnect', (attemptNumber) => {
@@ -461,6 +475,16 @@
                 }
             };
             
+            window.checkSocket = function() {
+                logMessage(`📡 SOCKET CHECK:`);
+                logMessage(`  - exists: ${socket ? 'YES' : 'NO'}`);
+                logMessage(`  - connected: ${socket?.connected}`);
+                logMessage(`  - id: ${socket?.id || 'N/A'}`);
+                if (socket) {
+                    logMessage(`  - transport: ${socket.io?.engine?.transport?.name || 'N/A'}`);
+                }
+            };
+            
 
             
             window.checkAudio = function() {
@@ -486,7 +510,12 @@
                     logMessage('⚠️ HEALTH CHECK: Socket disconnected while active, attempting reconnect');
                     socket.connect();
                 }
-            }, 5000); // Check every 5 seconds
+                
+                // Also log socket status periodically when active
+                if (isActive && Math.random() < 0.1) { // 10% chance each check
+                    logMessage(`💓 HEALTH: Socket connected: ${socket?.connected}, Active: ${isActive}, Speaking: ${!isMuted}`);
+                }
+            }, 2000); // Check every 2 seconds instead of 5
 
             // SIMPLIFIED Press-and-hold functionality for speak button
             function startSpeaking() {
@@ -524,15 +553,29 @@
                     speakButton.style.background = 'linear-gradient(135deg, #ffc107, #e0a800)';
                     updateSpeakButtonState(); // This will disable the button
                     
+                    // Send end-of-speech signal to Deepgram if socket is connected
+                    if (socket && socket.connected) {
+                        logMessage('📡 Sending end-of-speech signal to Deepgram');
+                        // Send empty buffer to signal end of speech
+                        socket.emit('user_audio', new ArrayBuffer(0));
+                    } else {
+                        logMessage('❌ Socket disconnected - cannot send end-of-speech signal', 'error');
+                        // Try to reconnect
+                        if (socket) {
+                            logMessage('🔄 Attempting to reconnect socket...');
+                            socket.connect();
+                        }
+                    }
+                    
                     // Safety backup
                     setTimeout(() => {
                         if (isAgentProcessing) {
-                            logMessage('⚠️ SAFETY: No response in 30s, re-enabling button');
+                            logMessage('⚠️ SAFETY: No response in 15s, re-enabling button');
                             isAgentProcessing = false;
                             isAgentSpeaking = false;
                             updateSpeakButtonState();
                         }
-                    }, 30000);
+                    }, 15000); // Reduced from 30s to 15s
                 } else {
                     logMessage(`🛑 WASN'T SPEAKING - isMuted was already true`);
                 }
@@ -560,26 +603,29 @@
             // SIMPLIFIED Mouse events  
             speakButton.addEventListener('mousedown', (e) => {
                 e.preventDefault();
-                logMessage(`🖱️ MOUSEDOWN FIRED`);
+                logMessage(`🖱️ MOUSEDOWN FIRED - isCurrentlySpeaking: ${isCurrentlySpeaking}`);
                 if (!isCurrentlySpeaking) {
                     isCurrentlySpeaking = true;
                     startSpeaking();
+                    logMessage(`🖱️ MOUSEDOWN: Started speaking`);
                 }
             });
 
             speakButton.addEventListener('mouseup', () => {
-                logMessage(`🖱️ MOUSEUP FIRED`);
+                logMessage(`🖱️ MOUSEUP FIRED - isCurrentlySpeaking: ${isCurrentlySpeaking}`);
                 if (isCurrentlySpeaking) {
                     isCurrentlySpeaking = false;
                     stopSpeaking();
+                    logMessage(`🖱️ MOUSEUP: Stopped speaking`);
                 }
             });
 
             speakButton.addEventListener('mouseleave', () => {
-                logMessage(`🖱️ MOUSELEAVE FIRED`);
+                logMessage(`🖱️ MOUSELEAVE FIRED - isCurrentlySpeaking: ${isCurrentlySpeaking}`);
                 if (isCurrentlySpeaking) {
                     isCurrentlySpeaking = false;
                     stopSpeaking();
+                    logMessage(`🖱️ MOUSELEAVE: Stopped speaking`);
                 }
             });
 
@@ -587,30 +633,33 @@
             speakButton.addEventListener('touchstart', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                logMessage(`📱 TOUCHSTART FIRED`);
+                logMessage(`📱 TOUCHSTART FIRED - isCurrentlySpeaking: ${isCurrentlySpeaking}`);
                 if (!isCurrentlySpeaking) {
                     isCurrentlySpeaking = true;
                     startSpeaking();
+                    logMessage(`📱 TOUCHSTART: Started speaking`);
                 }
             }, { passive: false });
 
             speakButton.addEventListener('touchend', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                logMessage(`📱 TOUCHEND FIRED`);
+                logMessage(`📱 TOUCHEND FIRED - isCurrentlySpeaking: ${isCurrentlySpeaking}`);
                 if (isCurrentlySpeaking) {
                     isCurrentlySpeaking = false;
                     stopSpeaking();
+                    logMessage(`📱 TOUCHEND: Stopped speaking`);
                 }
             }, { passive: false });
 
             speakButton.addEventListener('touchcancel', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                logMessage(`📱 TOUCHCANCEL FIRED`);
+                logMessage(`📱 TOUCHCANCEL FIRED - isCurrentlySpeaking: ${isCurrentlySpeaking}`);
                 if (isCurrentlySpeaking) {
                     isCurrentlySpeaking = false;
                     stopSpeaking();
+                    logMessage(`📱 TOUCHCANCEL: Stopped speaking`);
                 }
             }, { passive: false });
 
