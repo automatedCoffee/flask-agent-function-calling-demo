@@ -20,13 +20,6 @@
             </div>
             <div class="controls">
                 <label class="toggle">
-                    <input type="checkbox" id="holdToTalk">
-                    <span class="slider"></span>
-                </label>
-                <label for="holdToTalk" class="toggle-label">Hold-to-Talk</label>
-            </div>
-            <div class="controls">
-                <label class="toggle">
                     <input type="checkbox" id="showLogs">
                     <span class="slider"></span>
                 </label>
@@ -42,6 +35,13 @@
         </div>
     </div>
 
+    <!-- Press to Speak Button -->
+    <div class="speak-button-container">
+        <button id="speakButton" class="speak-button" disabled>
+            <span class="speak-button-text">Hold to Speak</span>
+        </button>
+    </div>
+
     <script>
         document.addEventListener("DOMContentLoaded", () => {
             const startButton = document.getElementById('startButton');
@@ -49,20 +49,18 @@
             const logsDiv = document.getElementById('logs');
             const conversationDiv = document.getElementById('conversation');
             const voiceModelSelect = document.getElementById('voiceModel');
-            const holdToTalkCheckbox = document.getElementById('holdToTalk');
             const showLogsCheckbox = document.getElementById('showLogs');
             const logsContainer = document.getElementById('logsContainer');
-            const syncScrollContainers = document.querySelectorAll('.syncscroll');
+            const speakButton = document.getElementById('speakButton');
 
-            let socket;
-            let audioContext;
-            let audioWorkletNode;
-            let microphoneStream;
-            let audioQueue = [];
-            let isPlaying = false;
+            let socket = null;
+            let audioContext = null;
+            let audioWorkletNode = null;
+            let microphoneStream = null;
             let isActive = false;
-            let isMuted = false;
-            let holdToTalkActive = false;
+            let isMuted = true; // Start muted, only speak when button is pressed
+            let isAgentSpeaking = false; // Track when agent is playing audio
+            let audioQueue = [];
             let nextPlayTime = 0; // For continuous audio scheduling
             let lastAudioSendTime = 0;
             const AUDIO_SEND_INTERVAL = 20; // Send audio every 20ms (was 100ms - too aggressive)
@@ -90,6 +88,7 @@
             }
 
             // --- Scroll Syncing ---
+            const syncScrollContainers = document.querySelectorAll('.syncscroll');
             syncScrollContainers.forEach(el => {
                 el.addEventListener('scroll', () => {
                     const scrollY = el.scrollTop;
@@ -144,32 +143,20 @@
                     microphone.connect(audioWorkletNode);
 
                     audioWorkletNode.port.onmessage = (event) => {
-                        if (socket && socket.connected && !isMuted) {
-                            // Very light throttling to prevent SocketIO overload while maintaining speech quality
-                            if (Math.random() < 0.85) { // Send 85% of audio chunks
-                                socket.emit('user_audio', event.data);
-                                
-                                // Log audio data being sent (occasionally)
-                                if (Math.random() < 0.01) { // 1% of chunks
-                                    logMessage(`Sending user audio: ${event.data.byteLength} bytes`);
-                                }
-                            }
-                        } else if (isMuted) {
-                            // Log when audio is muted (less frequently)
-                            if (Math.random() < 0.005) { // 0.5% of chunks
-                                logMessage(`Audio muted - Hold-to-Talk: ${holdToTalkActive ? 'ON' : 'OFF'}`);
-                            }
-                        } else if (!socket || !socket.connected) {
-                            // Log connection issues
-                            if (Math.random() < 0.005) {
-                                logMessage(`Audio not sent - Socket connected: ${socket?.connected || false}`);
+                        if (socket && socket.connected && !isMuted && !isAgentSpeaking) {
+                            // Send audio only when speak button is pressed and agent is not speaking
+                            socket.emit('user_audio', event.data);
+                            
+                            // Log audio data being sent (occasionally)
+                            if (Math.random() < 0.01) { // 1% of chunks
+                                logMessage(`Sending user audio: ${event.data.byteLength} bytes`);
                             }
                         }
                     };
                     
                     logMessage('Audio pipeline ready.');
                     logMessage(`Microphone connected - Sample rate: ${audioContext.sampleRate}Hz`);
-                    logMessage(`Audio mode: ${holdToTalkActive ? 'Hold-to-talk (Press Space)' : 'Continuous listening'}`);
+                    logMessage(`Audio mode: Press to Speak button only`);
                     connectSocket();
 
                 } catch (error) {
@@ -205,7 +192,20 @@
             }
 
             function playNextAudioChunk() {
-                if (audioQueue.length === 0 || !audioContext) return;
+                if (audioQueue.length === 0 || !audioContext) {
+                    // Re-enable speak button when agent finishes speaking
+                    if (isAgentSpeaking) {
+                        setTimeout(() => {
+                            if (audioQueue.length === 0) { // Double check after delay
+                                isAgentSpeaking = false;
+                                speakButton.disabled = false;
+                                speakButton.style.opacity = '1';
+                                logMessage('Agent finished speaking - Hold to Speak enabled');
+                            }
+                        }, 500); // Small delay to ensure all audio is finished
+                    }
+                    return;
+                }
 
                 const audioData = audioQueue.shift();
                 
@@ -286,13 +286,10 @@
                         case 'Welcome':
                             setStatus('Agent Ready');
                             // Show current audio mode status
-                            if (holdToTalkActive) {
-                                logMessage('Hold-to-talk mode - Press and hold Space to speak');
-                                setStatus('Agent Ready - Press Space to talk');
-                            } else {
-                                logMessage('Continuous listening mode - Speak anytime');
-                                setStatus('Agent Ready - Listening...');
-                            }
+                            logMessage('Agent ready - Use Press to Speak button');
+                            setStatus('Agent Ready - Press button to speak');
+                            // Enable the speak button when agent is ready
+                            speakButton.disabled = false;
                             break;
                         case 'ConversationText':
                             addConversationMessage('assistant', data.content);
@@ -306,6 +303,15 @@
 
                 socket.on('agent_audio', (chunk) => {
                     audioQueue.push(new Uint8Array(chunk));
+                    // Disable speak button when agent starts speaking
+                    if (!isAgentSpeaking) {
+                        isAgentSpeaking = true;
+                        speakButton.disabled = true;
+                        speakButton.style.opacity = '0.6';
+                        logMessage('Agent speaking - Hold to Speak disabled');
+                        // Stop user speaking if they were speaking
+                        stopSpeaking();
+                    }
                     playNextAudioChunk();
                 });
             }
@@ -321,20 +327,6 @@
                 }
             });
 
-            holdToTalkCheckbox.addEventListener('change', (e) => {
-                holdToTalkActive = e.target.checked;
-                logMessage(`Hold-to-Talk ${holdToTalkActive ? 'activated' : 'deactivated'}.`);
-                if (!holdToTalkActive) {
-                    isMuted = false; // Unmute if mode is turned off
-                    setStatus('Agent Ready - Continuous listening');
-                    logMessage('Continuous audio mode enabled');
-                } else {
-                    isMuted = true; // Mute by default in hold-to-talk mode
-                    setStatus('Agent Ready - Press Space to talk');
-                    logMessage('Hold-to-talk mode enabled - Press and hold Space to speak');
-                }
-            });
-
             showLogsCheckbox.addEventListener('change', (e) => {
                 if (e.target.checked) {
                     logsContainer.style.display = 'block';
@@ -344,22 +336,48 @@
                 }
             });
 
-            document.body.addEventListener('keydown', (e) => {
-                if (e.code === 'Space' && holdToTalkActive && isMuted) {
-                    e.preventDefault();
+            // Press-and-hold functionality for speak button
+            function startSpeaking() {
+                if (!isAgentSpeaking && isActive) {
                     isMuted = false;
                     logMessage('Speaking...', 'user');
                     setStatus('Listening...');
+                    speakButton.querySelector('.speak-button-text').textContent = 'Speaking...';
+                    speakButton.style.background = 'linear-gradient(135deg, #28a745, #1e7e34)';
                 }
+            }
+
+            function stopSpeaking() {
+                isMuted = true;
+                logMessage('Stopped speaking.');
+                setStatus('Agent Ready - Press button to speak');
+                speakButton.querySelector('.speak-button-text').textContent = 'Hold to Speak';
+                speakButton.style.background = 'linear-gradient(135deg, #007bff, #0056b3)';
+            }
+
+            // Mouse events
+            speakButton.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                startSpeaking();
             });
 
-            document.body.addEventListener('keyup', (e) => {
-                if (e.code === 'Space' && holdToTalkActive && !isMuted) {
-                    e.preventDefault();
-                    isMuted = true;
-                    logMessage('Stopped speaking.');
-                     setStatus('Agent Ready');
-                }
+            speakButton.addEventListener('mouseup', () => {
+                stopSpeaking();
+            });
+
+            speakButton.addEventListener('mouseleave', () => {
+                stopSpeaking();
+            });
+
+            // Touch events for mobile
+            speakButton.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                startSpeaking();
+            });
+
+            speakButton.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                stopSpeaking();
             });
 
             fetchVoiceModels();
