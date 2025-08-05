@@ -443,6 +443,24 @@
                 logMessage(`🔧 isMuted is now: ${isMuted}`);
             };
             
+            window.testSpeak = function() {
+                logMessage('🧪 TEST: Manual speak toggle');
+                if (!isCurrentlySpeaking) {
+                    isCurrentlySpeaking = true;
+                    startSpeaking();
+                    logMessage('🧪 Started speaking for 5 seconds');
+                    setTimeout(() => {
+                        isCurrentlySpeaking = false;
+                        stopSpeaking();
+                        logMessage('🧪 Stopped speaking');
+                    }, 5000);
+                } else {
+                    isCurrentlySpeaking = false;
+                    stopSpeaking();
+                    logMessage('🧪 Stopped speaking');
+                }
+            };
+            
 
             
             window.checkAudio = function() {
@@ -520,21 +538,49 @@
                 }
             }
 
+            // Simple click-based toggle for mobile fallback
+            let isCurrentlySpeaking = false;
+
+            speakButton.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                logMessage(`👆 CLICK FIRED - Currently speaking: ${isCurrentlySpeaking}`);
+                
+                if (!isCurrentlySpeaking) {
+                    isCurrentlySpeaking = true;
+                    startSpeaking();
+                    logMessage(`👆 CLICK: Started speaking`);
+                } else {
+                    isCurrentlySpeaking = false;
+                    stopSpeaking();
+                    logMessage(`👆 CLICK: Stopped speaking`);
+                }
+            });
+
             // SIMPLIFIED Mouse events  
             speakButton.addEventListener('mousedown', (e) => {
                 e.preventDefault();
                 logMessage(`🖱️ MOUSEDOWN FIRED`);
-                startSpeaking();
+                if (!isCurrentlySpeaking) {
+                    isCurrentlySpeaking = true;
+                    startSpeaking();
+                }
             });
 
             speakButton.addEventListener('mouseup', () => {
                 logMessage(`🖱️ MOUSEUP FIRED`);
-                stopSpeaking();
+                if (isCurrentlySpeaking) {
+                    isCurrentlySpeaking = false;
+                    stopSpeaking();
+                }
             });
 
             speakButton.addEventListener('mouseleave', () => {
                 logMessage(`🖱️ MOUSELEAVE FIRED`);
-                stopSpeaking();
+                if (isCurrentlySpeaking) {
+                    isCurrentlySpeaking = false;
+                    stopSpeaking();
+                }
             });
 
             // SIMPLIFIED Touch events for mobile
@@ -542,28 +588,31 @@
                 e.preventDefault();
                 e.stopPropagation();
                 logMessage(`📱 TOUCHSTART FIRED`);
-                startSpeaking();
+                if (!isCurrentlySpeaking) {
+                    isCurrentlySpeaking = true;
+                    startSpeaking();
+                }
             }, { passive: false });
 
             speakButton.addEventListener('touchend', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 logMessage(`📱 TOUCHEND FIRED`);
-                stopSpeaking();
+                if (isCurrentlySpeaking) {
+                    isCurrentlySpeaking = false;
+                    stopSpeaking();
+                }
             }, { passive: false });
 
             speakButton.addEventListener('touchcancel', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 logMessage(`📱 TOUCHCANCEL FIRED`);
-                stopSpeaking();
+                if (isCurrentlySpeaking) {
+                    isCurrentlySpeaking = false;
+                    stopSpeaking();
+                }
             }, { passive: false });
-
-            // Debug click event
-            speakButton.addEventListener('click', (e) => {
-                e.preventDefault();
-                logMessage(`👆 CLICK FIRED (should not be used for speaking)`);
-            });
 
             // Initialize speak button state
             speakButton.disabled = true;
