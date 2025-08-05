@@ -127,7 +127,6 @@
 
             async function startAudio() {
                 if (isActive) return;
-                isActive = true;
                 setStatus('Initializing...');
                 logMessage('Starting audio pipeline...');
 
@@ -138,7 +137,9 @@
                     await audioContext.audioWorklet.addModule('/audio-processor.js');
                     audioWorkletNode = new AudioWorkletNode(audioContext, 'audio-processor');
 
-                    microphoneStream = await navigator.mediaDevices.getUserMedia({ audio: { sampleRate: 16000, channelCount: 1 }});
+                    microphoneStream = await navigator.mediaDevices.getUserMedia({ 
+                        audio: { sampleRate: 16000, channelCount: 1 }
+                    });
                     const microphone = audioContext.createMediaStreamSource(microphoneStream);
                     microphone.connect(audioWorkletNode);
 
@@ -153,10 +154,20 @@
                             }
                         }
                     };
-                    
+
+                    isActive = true;
+                    startButton.textContent = 'Stop Voice Agent';
+                    setStatus('Connected, starting agent...');
                     logMessage('Audio pipeline ready.');
                     logMessage(`Microphone connected - Sample rate: ${audioContext.sampleRate}Hz`);
                     logMessage(`Audio mode: Press to Speak button only`);
+                    
+                    // Initialize states for new session
+                    isAgentSpeaking = false;
+                    isAgentProcessing = false;
+                    isMuted = true;
+                    updateSpeakButtonState(); // This should keep button disabled until agent is ready
+                    
                     connectSocket();
 
                 } catch (error) {
@@ -209,13 +220,12 @@
                         setTimeout(() => {
                             if (audioQueue.length === 0) { // Double check after delay
                                 isAgentSpeaking = false;
-                                logMessage('Agent finished speaking');
+                                isAgentProcessing = false; // Make sure processing is also false
+                                logMessage('🏁 Agent finished speaking - ready for user input');
                                 setStatus('Agent Ready - Press button to speak');
-                                speakButton.querySelector('.speak-button-text').textContent = 'Hold to Speak';
-                                speakButton.style.background = 'linear-gradient(135deg, #007bff, #0056b3)';
                                 updateSpeakButtonState(); // Re-enable button
                             }
-                        }, 800); // Longer delay to ensure all audio is finished and prevent cutoff
+                        }, 500); // Reduced delay for better responsiveness
                     }
                     return;
                 }
@@ -298,18 +308,21 @@
                     switch (data.type) {
                         case 'Welcome':
                             setStatus('Agent Ready');
-                            logMessage('Agent ready - waiting for greeting to finish');
+                            logMessage('🎉 Agent connected - waiting for greeting audio');
                             // Don't enable button yet - wait for greeting audio to finish
                             break;
                         case 'ConversationText':
                             addConversationMessage('assistant', data.content);
                             // Agent is responding, so it's no longer processing user input
                             isAgentProcessing = false;
+                            logMessage('📝 Agent response received - no longer processing');
+                            updateSpeakButtonState();
                             break;
                         case 'Error':
                             logMessage(`Agent Error: ${data.description}`, 'error');
                             setStatus('Error');
                             isAgentProcessing = false;
+                            isAgentSpeaking = false; // Make sure we're not stuck in speaking state
                             updateSpeakButtonState();
                             break;
                     }
@@ -320,8 +333,8 @@
                     // Start agent speaking if not already
                     if (!isAgentSpeaking) {
                         isAgentSpeaking = true;
-                        isAgentProcessing = false; // No longer processing since agent is responding
-                        logMessage('Agent speaking...');
+                        isAgentProcessing = false; // Clear processing state when agent starts speaking
+                        logMessage('🗣️ Agent started speaking');
                         setStatus('Agent speaking...');
                         updateSpeakButtonState(); // Disable button while agent speaks
                     }
@@ -335,10 +348,14 @@
                 speakButton.disabled = !shouldEnable;
                 speakButton.style.opacity = shouldEnable ? '1' : '0.6';
                 
+                logMessage(`Button state check - Active: ${isActive}, Speaking: ${isAgentSpeaking}, Processing: ${isAgentProcessing}, ShouldEnable: ${shouldEnable}`);
+                
                 if (shouldEnable) {
-                    logMessage('Hold to Speak button enabled');
+                    logMessage('✅ Hold to Speak button ENABLED');
+                    speakButton.style.background = 'linear-gradient(135deg, #007bff, #0056b3)';
+                    speakButton.querySelector('.speak-button-text').textContent = 'Hold to Speak';
                 } else {
-                    logMessage(`Hold to Speak button disabled - Active: ${isActive}, Speaking: ${isAgentSpeaking}, Processing: ${isAgentProcessing}`);
+                    logMessage(`❌ Hold to Speak button DISABLED - Active: ${isActive}, Speaking: ${isAgentSpeaking}, Processing: ${isAgentProcessing}`);
                 }
             }
 
