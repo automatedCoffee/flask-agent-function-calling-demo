@@ -99,8 +99,11 @@ class VoiceAgent:
             while self.is_running:
                 try:
                     audio_chunk = self.audio_queue.get_nowait()
-                    if audio_chunk:
+                    if audio_chunk is not None:  # Allow empty buffers for end-of-speech signal
                         await ws.send(audio_chunk)
+                        # Log when sending empty buffer (end-of-speech signal)
+                        if len(audio_chunk) == 0:
+                            logger.info("Sent end-of-speech signal to Deepgram")
                 except queue.Empty:
                     await asyncio.sleep(0.01)
         except asyncio.CancelledError:
