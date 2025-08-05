@@ -150,17 +150,36 @@
                         }
                         
                         if (socket && socket.connected && !isMuted && !isAgentSpeaking) {
-                            // Send audio only when speak button is pressed and agent is not speaking
-                            socket.emit('user_audio', event.data);
-                            
-                            // Log audio data being sent more frequently for debugging
-                            if (Math.random() < 0.05) { // 5% of chunks
-                                logMessage(`📤 SENDING user audio: ${event.data.byteLength} bytes`);
+                            try {
+                                // Send audio only when speak button is pressed and agent is not speaking
+                                socket.emit('user_audio', event.data);
+                                
+                                // Log audio data being sent more frequently for debugging
+                                if (Math.random() < 0.05) { // 5% of chunks
+                                    logMessage(`📤 SENDING user audio: ${event.data.byteLength} bytes`);
+                                }
+                            } catch (error) {
+                                logMessage(`❌ ERROR sending audio: ${error}`, 'error');
+                                // Try to reconnect socket if audio sending fails
+                                if (!socket.connected) {
+                                    logMessage('🔄 Socket disconnected during audio send, reconnecting...');
+                                    socket.connect();
+                                }
                             }
                         } else {
                             // Log why audio is NOT being sent
                             if (Math.random() < 0.02) { // 2% of chunks
-                                logMessage(`❌ NOT sending audio - Socket: ${socket?.connected}, Muted: ${isMuted}, AgentSpeaking: ${isAgentSpeaking}`);
+                                const reason = !socket ? 'No socket' : 
+                                              !socket.connected ? 'Socket disconnected' :
+                                              isMuted ? 'Muted' : 
+                                              isAgentSpeaking ? 'Agent speaking' : 'Unknown';
+                                logMessage(`❌ NOT sending audio - Reason: ${reason}`);
+                                
+                                // If socket is disconnected but we're trying to speak, attempt reconnect
+                                if (!socket?.connected && !isMuted) {
+                                    logMessage('🔄 Attempting socket reconnect while speaking...');
+                                    socket?.connect();
+                                }
                             }
                         }
                     };
@@ -297,12 +316,16 @@
             // --- WebSocket Logic ---
 
             function connectSocket() {
-                if (socket && socket.connected) return;
+                if (socket && socket.connected) {
+                    logMessage('📡 Socket already connected');
+                    return;
+                }
 
+                logMessage('📡 Connecting to socket...');
                 socket = io();
 
                 socket.on('connect', () => {
-                    logMessage('Socket connected successfully.');
+                    logMessage('📡 Socket connected successfully.');
                     setStatus('Connected, starting agent...');
                     const sessionConfig = {
                         voiceModel: voiceModelSelect.value,
@@ -310,9 +333,35 @@
                     socket.emit('start_voice_agent', sessionConfig);
                 });
 
-                socket.on('disconnect', () => {
-                    logMessage('Socket disconnected.', 'warn');
-                    stopAudio(); // Full cleanup on disconnect
+                socket.on('disconnect', (reason) => {
+                    logMessage(`📡 Socket disconnected: ${reason}`, 'warn');
+                    setStatus('Disconnected - Reconnecting...');
+                    
+                    // Force reconnection after a short delay
+                    setTimeout(() => {
+                        if (!socket.connected) {
+                            logMessage('📡 Attempting to reconnect...');
+                            socket.connect();
+                        }
+                    }, 2000);
+                });
+
+                socket.on('connect_error', (error) => {
+                    logMessage(`📡 Socket connection error: ${error}`, 'error');
+                    setStatus('Connection Error');
+                });
+
+                socket.on('reconnect', (attemptNumber) => {
+                    logMessage(`📡 Socket reconnected after ${attemptNumber} attempts`);
+                    setStatus('Reconnected');
+                    
+                    // Restart voice agent if we were active
+                    if (isActive) {
+                        const sessionConfig = {
+                            voiceModel: voiceModelSelect.value,
+                        };
+                        socket.emit('start_voice_agent', sessionConfig);
+                    }
                 });
 
                 socket.on('agent_response', (data) => {
@@ -428,6 +477,52 @@
                     });
                 }
             };
+            
+            window.checkSocket = function() {
+                logMessage(`📡 SOCKET STATUS:`);
+                logMessage(`  - socket exists: ${socket ? 'YES' : 'NO'}`);
+                logMessage(`  - socket.connected: ${socket?.connected}`);
+                logMessage(`  - socket.id: ${socket?.id}`);
+                logMessage(`  - socket.readyState: ${socket?.readyState}`);
+            };
+            
+            window.reconnectSocket = function() {
+                logMessage('🔄 MANUAL RECONNECT: Forcing socket reconnection');
+                if (socket) {
+                    socket.disconnect();
+                }
+                setTimeout(() => {
+                    connectSocket();
+                }, 1000);
+            };
+            
+            window.restartAgent = function() {
+                logMessage('🔄 RESTARTING AGENT: Full restart');
+                // Reset all states
+                isAgentSpeaking = false;
+                isAgentProcessing = false;
+                isMuted = true;
+                
+                // Reconnect socket
+                if (socket) {
+                    socket.disconnect();
+                }
+                setTimeout(() => {
+                    connectSocket();
+                }, 1000);
+                
+                // Update button state
+                updateSpeakButtonState();
+                logMessage('🔄 Agent restart initiated');
+            };
+            
+            // Periodic socket health check
+            setInterval(() => {
+                if (socket && !socket.connected && isActive) {
+                    logMessage('⚠️ HEALTH CHECK: Socket disconnected while active, attempting reconnect');
+                    socket.connect();
+                }
+            }, 5000); // Check every 5 seconds
 
             // Press-and-hold functionality for speak button
             function startSpeaking() {
