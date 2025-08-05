@@ -144,13 +144,23 @@
                     microphone.connect(audioWorkletNode);
 
                     audioWorkletNode.port.onmessage = (event) => {
+                        // Always log audio capture for debugging
+                        if (Math.random() < 0.1) { // 10% of chunks for debugging
+                            logMessage(`🎙️ Audio captured: ${event.data.byteLength} bytes, isMuted: ${isMuted}, isAgentSpeaking: ${isAgentSpeaking}, socketConnected: ${socket?.connected}`);
+                        }
+                        
                         if (socket && socket.connected && !isMuted && !isAgentSpeaking) {
                             // Send audio only when speak button is pressed and agent is not speaking
                             socket.emit('user_audio', event.data);
                             
-                            // Log audio data being sent (occasionally)
-                            if (Math.random() < 0.01) { // 1% of chunks
-                                logMessage(`Sending user audio: ${event.data.byteLength} bytes`);
+                            // Log audio data being sent more frequently for debugging
+                            if (Math.random() < 0.05) { // 5% of chunks
+                                logMessage(`📤 SENDING user audio: ${event.data.byteLength} bytes`);
+                            }
+                        } else {
+                            // Log why audio is NOT being sent
+                            if (Math.random() < 0.02) { // 2% of chunks
+                                logMessage(`❌ NOT sending audio - Socket: ${socket?.connected}, Muted: ${isMuted}, AgentSpeaking: ${isAgentSpeaking}`);
                             }
                         }
                     };
@@ -383,6 +393,7 @@
                 logMessage(`📊 CURRENT STATES: isActive=${isActive}, isAgentSpeaking=${isAgentSpeaking}, isAgentProcessing=${isAgentProcessing}, isMuted=${isMuted}`);
                 logMessage(`📊 BUTTON STATE: disabled=${speakButton.disabled}, opacity=${speakButton.style.opacity}`);
                 logMessage(`📊 AUDIO QUEUE: length=${audioQueue.length}`);
+                logMessage(`📊 SOCKET: connected=${socket?.connected}`);
             };
             
             window.forceEnable = function() {
@@ -393,13 +404,40 @@
                 speakButton.querySelector('.speak-button-text').textContent = 'Hold to Speak';
                 logMessage('🔧 Button force enabled');
             };
+            
+            window.testAudioSending = function() {
+                logMessage('🧪 TESTING: Forcing audio unmute for 5 seconds');
+                isMuted = false;
+                setTimeout(() => {
+                    isMuted = true;
+                    logMessage('🧪 TESTING: Audio mute restored');
+                }, 5000);
+            };
+            
+            window.checkAudio = function() {
+                logMessage(`🎙️ AUDIO STATUS:`);
+                logMessage(`  - audioContext: ${audioContext ? 'EXISTS' : 'NULL'}`);
+                logMessage(`  - audioContext.state: ${audioContext?.state}`);
+                logMessage(`  - audioWorkletNode: ${audioWorkletNode ? 'EXISTS' : 'NULL'}`);
+                logMessage(`  - microphoneStream: ${microphoneStream ? 'EXISTS' : 'NULL'}`);
+                logMessage(`  - microphoneStream.active: ${microphoneStream?.active}`);
+                if (microphoneStream) {
+                    logMessage(`  - microphone tracks: ${microphoneStream.getTracks().length}`);
+                    microphoneStream.getTracks().forEach((track, i) => {
+                        logMessage(`    Track ${i}: ${track.kind}, enabled: ${track.enabled}, readyState: ${track.readyState}`);
+                    });
+                }
+            };
 
             // Press-and-hold functionality for speak button
             function startSpeaking() {
                 logMessage(`🎤 startSpeaking() called - Button disabled: ${speakButton.disabled}, isAgentSpeaking: ${isAgentSpeaking}, isAgentProcessing: ${isAgentProcessing}, isActive: ${isActive}`);
+                logMessage(`🎤 Current muted state BEFORE: ${isMuted}`);
+                
                 if (!isAgentSpeaking && !isAgentProcessing && isActive) {
                     isMuted = false;
-                    logMessage('Speaking...', 'user');
+                    logMessage('✅ UNMUTED - Now capturing audio', 'user');
+                    logMessage(`🎤 Current muted state AFTER: ${isMuted}`);
                     setStatus('Listening...');
                     speakButton.querySelector('.speak-button-text').textContent = 'Speaking...';
                     speakButton.style.background = 'linear-gradient(135deg, #28a745, #1e7e34)';
@@ -409,9 +447,10 @@
             }
 
             function stopSpeaking() {
-                logMessage(`🛑 stopSpeaking() called - isMuted: ${isMuted}`);
+                logMessage(`🛑 stopSpeaking() called - isMuted BEFORE: ${isMuted}`);
                 if (!isMuted) { // Only if we were actually speaking
                     isMuted = true;
+                    logMessage(`🛑 MUTED - Stopped capturing audio. isMuted AFTER: ${isMuted}`);
                     isAgentProcessing = true; // Agent is now processing
                     logMessage('Stopped speaking - Agent processing...');
                     setStatus('Agent processing...');
@@ -429,6 +468,8 @@
                             updateSpeakButtonState();
                         }
                     }, 30000); // 30 second backup
+                } else {
+                    logMessage(`🛑 stopSpeaking() called but we weren't speaking (isMuted was already true)`);
                 }
             }
 
