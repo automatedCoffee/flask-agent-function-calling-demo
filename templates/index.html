@@ -215,30 +215,19 @@
 
             function playNextAudioChunk() {
                 if (audioQueue.length === 0 || !audioContext) {
-                    // Agent finished speaking - enable button for next user turn
+                    // Audio queue is empty, but we'll rely primarily on AgentAudioDone message
                     if (isAgentSpeaking) {
-                        logMessage(`🔄 Audio queue empty, attempting to re-enable button in 500ms`);
+                        logMessage(`🔄 Audio queue empty, checking for remaining audio...`);
                         setTimeout(() => {
                             logMessage(`🔍 Checking conditions: audioQueue.length=${audioQueue.length}, isAgentSpeaking=${isAgentSpeaking}`);
                             if (audioQueue.length === 0) { // Double check after delay
                                 isAgentSpeaking = false;
-                                isAgentProcessing = false; // Make sure processing is also false
-                                logMessage('🏁 Agent finished speaking - ready for user input');
+                                isAgentProcessing = false;
+                                logMessage('🏁 Audio playback finished - ready for user input');
                                 setStatus('Agent Ready - Press button to speak');
-                                updateSpeakButtonState(); // Re-enable button
-                                
-                                // Force enable as backup
-                                setTimeout(() => {
-                                    if (speakButton.disabled) {
-                                        logMessage('🔧 FORCE ENABLING BUTTON - something is wrong with state logic');
-                                        speakButton.disabled = false;
-                                        speakButton.style.opacity = '1';
-                                        speakButton.style.background = 'linear-gradient(135deg, #007bff, #0056b3)';
-                                        speakButton.querySelector('.speak-button-text').textContent = 'Hold to Speak';
-                                    }
-                                }, 1000);
+                                updateSpeakButtonState();
                             }
-                        }, 500); // Reduced delay for better responsiveness
+                        }, 100); // Much shorter delay since AgentAudioDone should handle most cases
                     }
                     return;
                 }
@@ -328,7 +317,14 @@
                             addConversationMessage('assistant', data.content);
                             // Agent is responding, so it's no longer processing user input
                             isAgentProcessing = false;
-                            logMessage('📝 Agent response received - no longer processing');
+                            logMessage('📝 Agent response received - waiting for AgentAudioDone');
+                            break;
+                        case 'AgentAudioDone':
+                            // Agent has finished speaking/responding - enable button immediately
+                            isAgentSpeaking = false;
+                            isAgentProcessing = false;
+                            logMessage('✅ AgentAudioDone received - enabling button immediately');
+                            setStatus('Agent Ready - Press button to speak');
                             updateSpeakButtonState();
                             break;
                         case 'Error':
@@ -422,6 +418,17 @@
                     speakButton.querySelector('.speak-button-text').textContent = 'Processing...';
                     speakButton.style.background = 'linear-gradient(135deg, #ffc107, #e0a800)';
                     updateSpeakButtonState(); // Disable button while processing
+                    
+                    // Safety backup - if no AgentAudioDone received within 30 seconds, force enable
+                    setTimeout(() => {
+                        if (isAgentProcessing) {
+                            logMessage('⚠️ SAFETY BACKUP: No AgentAudioDone received, forcing button enable');
+                            isAgentProcessing = false;
+                            isAgentSpeaking = false;
+                            setStatus('Agent Ready - Press button to speak');
+                            updateSpeakButtonState();
+                        }
+                    }, 30000); // 30 second backup
                 }
             }
 
