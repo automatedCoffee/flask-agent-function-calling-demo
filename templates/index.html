@@ -458,18 +458,15 @@
             };
             
             window.testSpeak = function() {
-                logMessage('🧪 TEST: Manual speak toggle');
-                if (!isCurrentlySpeaking) {
-                    isCurrentlySpeaking = true;
+                logMessage('�� TEST: Manual speak test');
+                if (isMuted) {
                     startSpeaking();
                     logMessage('🧪 Started speaking for 5 seconds');
                     setTimeout(() => {
-                        isCurrentlySpeaking = false;
                         stopSpeaking();
                         logMessage('🧪 Stopped speaking');
                     }, 5000);
                 } else {
-                    isCurrentlySpeaking = false;
                     stopSpeaking();
                     logMessage('🧪 Stopped speaking');
                 }
@@ -520,13 +517,12 @@
             // SIMPLIFIED Press-and-hold functionality for speak button
             function startSpeaking() {
                 logMessage(`🎤 startSpeaking() ENTRY - disabled: ${speakButton.disabled}`);
-                logMessage(`🎤 BEFORE - isActive: ${isActive}, isAgentSpeaking: ${isAgentSpeaking}, isAgentProcessing: ${isAgentProcessing}, isMuted: ${isMuted}`);
+                logMessage(`🎤 BEFORE - isMuted: ${isMuted}`);
                 
-                // Simplify conditions - just check if button is enabled
+                // Simple condition - just check if button is enabled
                 if (!speakButton.disabled) {
-                    logMessage(`🎤 CONDITIONS MET - Setting isMuted to false`);
+                    logMessage(`🎤 SETTING isMuted = false`);
                     isMuted = false;
-                    isAgentProcessing = false; // Clear any processing state
                     
                     logMessage(`✅ UNMUTED - isMuted is now: ${isMuted}`, 'user');
                     setStatus('🎤 SPEAKING - Hold button and talk');
@@ -543,124 +539,86 @@
                 logMessage(`🛑 stopSpeaking() ENTRY - isMuted: ${isMuted}`);
                 
                 if (!isMuted) { // Only if we were actually speaking
-                    logMessage(`🛑 WAS SPEAKING - Setting isMuted to true`);
+                    logMessage(`🛑 SETTING isMuted = true`);
                     isMuted = true;
-                    isAgentProcessing = true; // Agent will process our input
+                    isAgentProcessing = true;
                     
                     logMessage(`🛑 MUTED - isMuted is now: ${isMuted}`);
                     setStatus('Agent processing...');
                     speakButton.querySelector('.speak-button-text').textContent = 'Processing...';
                     speakButton.style.background = 'linear-gradient(135deg, #ffc107, #e0a800)';
-                    updateSpeakButtonState(); // This will disable the button
+                    updateSpeakButtonState();
                     
-                    // Send end-of-speech signal to Deepgram if socket is connected
+                    // Send end-of-speech signal to Deepgram
                     if (socket && socket.connected) {
-                        logMessage('📡 Sending end-of-speech signal to Deepgram');
-                        // Send empty buffer to signal end of speech
+                        logMessage('📡 Sending end-of-speech signal');
                         socket.emit('user_audio', new ArrayBuffer(0));
-                    } else {
-                        logMessage('❌ Socket disconnected - cannot send end-of-speech signal', 'error');
-                        // Try to reconnect
-                        if (socket) {
-                            logMessage('🔄 Attempting to reconnect socket...');
-                            socket.connect();
-                        }
                     }
                     
                     // Safety backup
                     setTimeout(() => {
                         if (isAgentProcessing) {
-                            logMessage('⚠️ SAFETY: No response in 15s, re-enabling button');
+                            logMessage('⚠️ SAFETY: Re-enabling button');
                             isAgentProcessing = false;
                             isAgentSpeaking = false;
                             updateSpeakButtonState();
                         }
-                    }, 15000); // Reduced from 30s to 15s
+                    }, 15000);
                 } else {
-                    logMessage(`🛑 WASN'T SPEAKING - isMuted was already true`);
+                    logMessage(`🛑 WASN'T SPEAKING`);
                 }
             }
 
             // Simple click-based toggle for mobile fallback
-            let isCurrentlySpeaking = false;
-
             speakButton.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                logMessage(`👆 CLICK FIRED - Currently speaking: ${isCurrentlySpeaking}`);
-                
-                if (!isCurrentlySpeaking) {
-                    isCurrentlySpeaking = true;
+                logMessage(`👆 CLICK FIRED`);
+                // For mobile - simple toggle
+                if (isMuted) {
                     startSpeaking();
-                    logMessage(`👆 CLICK: Started speaking`);
                 } else {
-                    isCurrentlySpeaking = false;
                     stopSpeaking();
-                    logMessage(`👆 CLICK: Stopped speaking`);
                 }
             });
 
-            // SIMPLIFIED Mouse events  
+            // Mouse events for desktop
             speakButton.addEventListener('mousedown', (e) => {
                 e.preventDefault();
-                logMessage(`🖱️ MOUSEDOWN FIRED - isCurrentlySpeaking: ${isCurrentlySpeaking}`);
-                if (!isCurrentlySpeaking) {
-                    isCurrentlySpeaking = true;
-                    startSpeaking();
-                    logMessage(`🖱️ MOUSEDOWN: Started speaking`);
-                }
+                logMessage(`🖱️ MOUSEDOWN FIRED`);
+                startSpeaking();
             });
 
             speakButton.addEventListener('mouseup', () => {
-                logMessage(`🖱️ MOUSEUP FIRED - isCurrentlySpeaking: ${isCurrentlySpeaking}`);
-                if (isCurrentlySpeaking) {
-                    isCurrentlySpeaking = false;
-                    stopSpeaking();
-                    logMessage(`🖱️ MOUSEUP: Stopped speaking`);
-                }
+                logMessage(`🖱️ MOUSEUP FIRED`);
+                stopSpeaking();
             });
 
             speakButton.addEventListener('mouseleave', () => {
-                logMessage(`🖱️ MOUSELEAVE FIRED - isCurrentlySpeaking: ${isCurrentlySpeaking}`);
-                if (isCurrentlySpeaking) {
-                    isCurrentlySpeaking = false;
-                    stopSpeaking();
-                    logMessage(`🖱️ MOUSELEAVE: Stopped speaking`);
-                }
+                logMessage(`🖱️ MOUSELEAVE FIRED`);
+                stopSpeaking();
             });
 
-            // SIMPLIFIED Touch events for mobile
+            // Touch events for mobile
             speakButton.addEventListener('touchstart', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                logMessage(`📱 TOUCHSTART FIRED - isCurrentlySpeaking: ${isCurrentlySpeaking}`);
-                if (!isCurrentlySpeaking) {
-                    isCurrentlySpeaking = true;
-                    startSpeaking();
-                    logMessage(`📱 TOUCHSTART: Started speaking`);
-                }
+                logMessage(`📱 TOUCHSTART FIRED`);
+                startSpeaking();
             }, { passive: false });
 
             speakButton.addEventListener('touchend', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                logMessage(`📱 TOUCHEND FIRED - isCurrentlySpeaking: ${isCurrentlySpeaking}`);
-                if (isCurrentlySpeaking) {
-                    isCurrentlySpeaking = false;
-                    stopSpeaking();
-                    logMessage(`📱 TOUCHEND: Stopped speaking`);
-                }
+                logMessage(`📱 TOUCHEND FIRED`);
+                stopSpeaking();
             }, { passive: false });
 
             speakButton.addEventListener('touchcancel', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                logMessage(`📱 TOUCHCANCEL FIRED - isCurrentlySpeaking: ${isCurrentlySpeaking}`);
-                if (isCurrentlySpeaking) {
-                    isCurrentlySpeaking = false;
-                    stopSpeaking();
-                    logMessage(`📱 TOUCHCANCEL: Stopped speaking`);
-                }
+                logMessage(`📱 TOUCHCANCEL FIRED`);
+                stopSpeaking();
             }, { passive: false });
 
             // Initialize speak button state
