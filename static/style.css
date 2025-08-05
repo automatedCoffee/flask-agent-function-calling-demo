@@ -666,6 +666,9 @@ body:not(.dark-mode) .industry-item {
     justify-content: center;
     user-select: none;
     outline: none;
+    pointer-events: auto; /* Ensure button can be clicked */
+    position: relative;
+    z-index: 1001; /* Higher than container */
 }
 
 .speak-button:hover:not(:disabled) {

@@ -217,13 +217,26 @@
                 if (audioQueue.length === 0 || !audioContext) {
                     // Agent finished speaking - enable button for next user turn
                     if (isAgentSpeaking) {
+                        logMessage(`🔄 Audio queue empty, attempting to re-enable button in 500ms`);
                         setTimeout(() => {
+                            logMessage(`🔍 Checking conditions: audioQueue.length=${audioQueue.length}, isAgentSpeaking=${isAgentSpeaking}`);
                             if (audioQueue.length === 0) { // Double check after delay
                                 isAgentSpeaking = false;
                                 isAgentProcessing = false; // Make sure processing is also false
                                 logMessage('🏁 Agent finished speaking - ready for user input');
                                 setStatus('Agent Ready - Press button to speak');
                                 updateSpeakButtonState(); // Re-enable button
+                                
+                                // Force enable as backup
+                                setTimeout(() => {
+                                    if (speakButton.disabled) {
+                                        logMessage('🔧 FORCE ENABLING BUTTON - something is wrong with state logic');
+                                        speakButton.disabled = false;
+                                        speakButton.style.opacity = '1';
+                                        speakButton.style.background = 'linear-gradient(135deg, #007bff, #0056b3)';
+                                        speakButton.querySelector('.speak-button-text').textContent = 'Hold to Speak';
+                                    }
+                                }, 1000);
                             }
                         }, 500); // Reduced delay for better responsiveness
                     }
@@ -359,18 +372,48 @@
                 }
             }
 
+            // Manual test function for debugging
+            window.testButton = function() {
+                logMessage('🧪 MANUAL TEST: Forcing button enable');
+                isActive = true;
+                isAgentSpeaking = false;
+                isAgentProcessing = false;
+                updateSpeakButtonState();
+                logMessage(`🧪 TEST RESULT: Button disabled = ${speakButton.disabled}`);
+            };
+            
+            // Additional debug functions
+            window.checkStates = function() {
+                logMessage(`📊 CURRENT STATES: isActive=${isActive}, isAgentSpeaking=${isAgentSpeaking}, isAgentProcessing=${isAgentProcessing}, isMuted=${isMuted}`);
+                logMessage(`📊 BUTTON STATE: disabled=${speakButton.disabled}, opacity=${speakButton.style.opacity}`);
+                logMessage(`📊 AUDIO QUEUE: length=${audioQueue.length}`);
+            };
+            
+            window.forceEnable = function() {
+                logMessage('🔧 FORCE ENABLE: Manually enabling button');
+                speakButton.disabled = false;
+                speakButton.style.opacity = '1';
+                speakButton.style.background = 'linear-gradient(135deg, #007bff, #0056b3)';
+                speakButton.querySelector('.speak-button-text').textContent = 'Hold to Speak';
+                logMessage('🔧 Button force enabled');
+            };
+
             // Press-and-hold functionality for speak button
             function startSpeaking() {
+                logMessage(`🎤 startSpeaking() called - Button disabled: ${speakButton.disabled}, isAgentSpeaking: ${isAgentSpeaking}, isAgentProcessing: ${isAgentProcessing}, isActive: ${isActive}`);
                 if (!isAgentSpeaking && !isAgentProcessing && isActive) {
                     isMuted = false;
                     logMessage('Speaking...', 'user');
                     setStatus('Listening...');
                     speakButton.querySelector('.speak-button-text').textContent = 'Speaking...';
                     speakButton.style.background = 'linear-gradient(135deg, #28a745, #1e7e34)';
+                } else {
+                    logMessage(`❌ Cannot start speaking - conditions not met`);
                 }
             }
 
             function stopSpeaking() {
+                logMessage(`🛑 stopSpeaking() called - isMuted: ${isMuted}`);
                 if (!isMuted) { // Only if we were actually speaking
                     isMuted = true;
                     isAgentProcessing = true; // Agent is now processing
@@ -385,25 +428,30 @@
             // Mouse events
             speakButton.addEventListener('mousedown', (e) => {
                 e.preventDefault();
+                logMessage(`🖱️ Mouse down event triggered`);
                 startSpeaking();
             });
 
             speakButton.addEventListener('mouseup', () => {
+                logMessage(`🖱️ Mouse up event triggered`);
                 stopSpeaking();
             });
 
             speakButton.addEventListener('mouseleave', () => {
+                logMessage(`🖱️ Mouse leave event triggered`);
                 stopSpeaking();
             });
 
             // Touch events for mobile
             speakButton.addEventListener('touchstart', (e) => {
                 e.preventDefault();
+                logMessage(`📱 Touch start event triggered`);
                 startSpeaking();
             });
 
             speakButton.addEventListener('touchend', (e) => {
                 e.preventDefault();
+                logMessage(`📱 Touch end event triggered`);
                 stopSpeaking();
             });
 
@@ -411,6 +459,16 @@
             speakButton.disabled = true;
             speakButton.style.opacity = '0.6';
             logMessage('Hold to Speak button initialized (disabled)');
+            
+            // Debug button element
+            logMessage(`🔍 Button element found: ${speakButton ? 'YES' : 'NO'}`);
+            logMessage(`🔍 Button ID: ${speakButton?.id}`);
+            logMessage(`🔍 Button disabled: ${speakButton?.disabled}`);
+            
+            // Add error handling
+            window.addEventListener('error', (e) => {
+                logMessage(`❌ JavaScript Error: ${e.message} at ${e.filename}:${e.lineno}`, 'error');
+            });
 
             // --- Other Event Listeners ---
 
