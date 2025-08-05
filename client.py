@@ -19,7 +19,15 @@ load_dotenv()
 app = Flask(__name__, static_folder="./static", static_url_path="/")
 # Explicitly use the 'threading' async mode. This is the most robust and
 # avoids conflicts with the asyncio code running in the background.
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+# Add larger packet size limits to prevent "Too many packets in payload" errors
+socketio = SocketIO(
+    app, 
+    cors_allowed_origins="*", 
+    async_mode='threading',
+    max_http_buffer_size=16*1024*1024,  # 16MB buffer
+    ping_timeout=120,  # 2 minutes
+    ping_interval=25   # 25 seconds
+)
 
 # --- Logging Setup ---
 logger = logging.getLogger(__name__)
@@ -118,39 +126,61 @@ class VoiceAgent:
             logger.error(f"Receiver loop error: {e}")
 
     async def _handle_function_call(self, ws, function_call_msg):
+        logger.info(f"Received function call request: {json.dumps(function_call_msg, indent=2)}")
         functions = function_call_msg.get('functions', [])
+        
+        if not functions:
+            logger.error("No functions found in function call request")
+            return
         
         for function_def in functions:
             function_name = function_def.get('name')
             function_id = function_def.get('id')  # Use id as request_id
+            arguments_str = function_def.get('arguments', '{}')
+            
+            logger.info(f"Processing function: {function_name} with id: {function_id}")
+            logger.info(f"Raw arguments: {arguments_str}")
             
             if function_name in FUNCTION_MAP:
                 try:
-                    arguments = json.loads(function_def.get('arguments', '{}'))
+                    arguments = json.loads(arguments_str)
+                    logger.info(f"Parsed arguments: {arguments}")
+                    
                     # Pass arguments as a single params dict, matching function signatures
+                    logger.info(f"Calling function {function_name} with arguments: {arguments}")
                     result = FUNCTION_MAP[function_name](arguments)
+                    logger.info(f"Function {function_name} returned: {result}")
+                    
                     # Format response to match Deepgram's expected structure
                     response = {
                         "type": "FunctionCallResponse", 
                         "call_id": function_id, 
                         "result": json.dumps(result)  # Stringify the result
                     }
+                except json.JSONDecodeError as e:
+                    logger.error(f"Error parsing arguments for {function_name}: {e}")
+                    response = {
+                        "type": "FunctionCallResponse", 
+                        "call_id": function_id, 
+                        "result": json.dumps({"error": f"Invalid arguments format: {str(e)}", "success": False})
+                    }
                 except Exception as e:
                     logger.error(f"Error executing function {function_name}: {e}")
+                    logger.error(f"Function signature expects: params dict, got: {type(arguments)}")
                     response = {
                         "type": "FunctionCallResponse", 
                         "call_id": function_id, 
                         "result": json.dumps({"error": str(e), "success": False})
                     }
             else:
-                logger.error(f"Function {function_name} not found.")
+                logger.error(f"Function {function_name} not found in FUNCTION_MAP: {list(FUNCTION_MAP.keys())}")
                 response = {
                     "type": "FunctionCallResponse", 
                     "call_id": function_id, 
                     "result": json.dumps({"error": f"Function {function_name} not found.", "success": False})
                 }
             
-            logger.info(f"Function {function_name} executed, sending response: {response}")
+            logger.info(f"Sending function response: {json.dumps(response, indent=2)}")
             await ws.send(json.dumps(response))
 
     async def run(self):

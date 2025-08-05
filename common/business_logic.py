@@ -298,10 +298,14 @@ def get_customer_backendless(company_name):
     Returns CustomerOid and printCustomerName if found.
     Falls back to mock data if API credentials are not configured.
     """
+    print(f"get_customer_backendless called with company_name: '{company_name}'")
+    
     # Check if Backendless API credentials are configured
     if not BACKENDLESS_APP_ID or not BACKENDLESS_API_KEY:
         print(f"Backendless API not configured, using mock data for customer lookup: {company_name}")
         return get_customer_mock(company_name)
+    
+    print(f"Using Backendless API credentials - APP_ID: {BACKENDLESS_APP_ID[:8]}..., API_KEY: {BACKENDLESS_API_KEY[:8]}...")
     
     try:
         # Build the correct Backendless URL structure
@@ -310,30 +314,43 @@ def get_customer_backendless(company_name):
         # Create the where clause for the company name search
         where_clause = f"Company LIKE '%{company_name}%'"
         
+        print(f"Making API request to: {api_url}")
+        print(f"Where clause: {where_clause}")
+        
         # Make the API request to Backendless
         response = requests.get(
             api_url,
-            params={'where': where_clause}
+            params={'where': where_clause},
+            timeout=30  # Add timeout to prevent hanging
         )
+        
+        print(f"API response status: {response.status_code}")
+        print(f"API response content: {response.text[:500]}...")
         
         if response.status_code == 200:
             customers = response.json()
+            print(f"Found {len(customers)} customers matching company search")
             if customers and len(customers) > 0:
                 customer = customers[0]  # Take the first match
+                print(f"Using customer: {customer.get('Company')} with ID: {customer.get('objectId')}")
                 return {
                     'CustomerOid': customer.get('objectId'),
                     'printCustomerName': customer.get('Company'),
                     'success': True
                 }
             else:
-                return {
-                    'error': 'Customer not found',
-                    'success': False
-                }
+                print(f"No customers found for company: {company_name}, falling back to mock data")
+                return get_customer_mock(company_name)
         else:
             print(f"Backendless API request failed with status {response.status_code}, falling back to mock data")
             return get_customer_mock(company_name)
             
+    except requests.exceptions.Timeout:
+        print(f"Backendless API timeout, falling back to mock data")
+        return get_customer_mock(company_name)
+    except requests.exceptions.RequestException as e:
+        print(f"Backendless API request error, falling back to mock data: {str(e)}")
+        return get_customer_mock(company_name)
     except Exception as e:
         print(f"Backendless API error, falling back to mock data: {str(e)}")
         return get_customer_mock(company_name)
