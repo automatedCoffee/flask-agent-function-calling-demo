@@ -212,7 +212,9 @@ class VoiceAgent:
             logger.info("Connecting to Deepgram...")
             self.dg_client = await websockets.connect(
                 self.agent_templates.voice_agent_url,
-                extra_headers={"Authorization": f"Token {api_key}"}
+                extra_headers={"Authorization": f"Token {api_key}"},
+                open_timeout=10,
+                close_timeout=10,
             )
             logger.info("Successfully connected to Deepgram.")
             self.is_running = True
@@ -233,9 +235,14 @@ class VoiceAgent:
 
 # --- SocketIO Event Handlers ---
 voice_agent = None
+# Guard to prevent concurrent starts
+_start_lock = threading.Lock()
+_agent_starting = False
+
 
 def run_agent_in_background(agent: VoiceAgent) -> None:
     """Run the agent's async loop in a dedicated OS thread with its own event loop."""
+    global _agent_starting, voice_agent
     try:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
@@ -247,13 +254,23 @@ def run_agent_in_background(agent: VoiceAgent) -> None:
             loop.close()
         except Exception:
             pass
+        # Allow future starts
+        with _start_lock:
+            _agent_starting = False
+            if voice_agent and not voice_agent.is_running:
+                voice_agent = None
 
 @socketio.on('start_voice_agent')
 def handle_start_voice_agent(data):
-    global voice_agent
-    if voice_agent and voice_agent.is_running:
-        logger.info("Voice agent is already running.")
-        return
+    global voice_agent, _agent_starting
+    with _start_lock:
+        if _agent_starting:
+            logger.info("Voice agent start already in progress; ignoring duplicate start request.")
+            return
+        if voice_agent is not None:
+            logger.info("Voice agent instance already exists; ignoring start request.")
+            return
+        _agent_starting = True
 
     logger.info(f"Starting voice agent with data: {data}")
     industry = data.get("industry", "tech_support")
