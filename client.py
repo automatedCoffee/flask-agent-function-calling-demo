@@ -23,7 +23,8 @@ app = Flask(__name__, static_folder="./static", static_url_path="/")
 socketio = SocketIO(
     app, 
     cors_allowed_origins="*", 
-    async_mode='threading',
+    # Let Flask-SocketIO auto-select the best async mode (eventlet preferred)
+    async_mode=None,
     max_http_buffer_size=32*1024*1024,  # 32MB buffer (was 16MB)
     ping_timeout=180,  # 3 minutes (was 2 minutes)
     ping_interval=30   # 30 seconds (was 25 seconds)
@@ -278,4 +279,5 @@ if __name__ == "__main__":
     host = '0.0.0.0'
     port = 5000
     logger.info(f"Starting Flask server on {host}:{port}")
+    # Use eventlet when available for WebSocket support in dev
     socketio.run(app, host=host, port=port)
