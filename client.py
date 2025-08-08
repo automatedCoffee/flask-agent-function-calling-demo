@@ -90,7 +90,8 @@ class VoiceAgent:
         self.dg_client = None
         self.audio_queue = queue.Queue()
         self.is_running = False
-        self.agent_templates = AgentTemplates(industry, voiceModel, voiceName)
+        # FIX: pass keyword args to avoid parameter order mismatch
+        self.agent_templates = AgentTemplates(industry=industry, voiceModel=voiceModel, voiceName=voiceName)
 
     def send_audio(self, audio_chunk):
         self.audio_queue.put(audio_chunk)
@@ -247,7 +248,8 @@ def handle_start_voice_agent(data):
 
     logger.info(f"Starting voice agent with data: {data}")
     industry = data.get("industry", "tech_support")
-    voiceModel = data.get("voiceModel", "aura-2-thalia-en")
+    # Default if missing or empty string
+    voiceModel = data.get("voiceModel") or "aura-2-thalia-en"
     voiceName = data.get("voiceName", "")
     
     voice_agent = VoiceAgent(industry, voiceModel, voiceName)
