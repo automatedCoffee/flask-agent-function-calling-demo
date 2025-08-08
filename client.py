@@ -11,6 +11,7 @@ from common.agent_functions import FUNCTION_MAP
 from common.agent_templates import AgentTemplates
 import logging
 from common.log_formatter import CustomFormatter
+import threading
 
 # Load environment variables from .env file
 load_dotenv()
@@ -62,7 +63,8 @@ def get_tts_models():
             return jsonify({"error": "DEEPGRAM_API_KEY not set"}), 500
         response = requests.get(
             "https://api.deepgram.com/v1/models",
-            headers={"Authorization": f"Token {dg_api_key}"}
+            headers={"Authorization": f"Token {dg_api_key}"},
+            timeout=5,
         )
         response.raise_for_status()
         data = response.json()
@@ -232,12 +234,19 @@ class VoiceAgent:
 # --- SocketIO Event Handlers ---
 voice_agent = None
 
-def run_agent_in_background(agent):
-    """A helper function to run the agent's async loop in a thread."""
+def run_agent_in_background(agent: VoiceAgent) -> None:
+    """Run the agent's async loop in a dedicated OS thread with its own event loop."""
     try:
-        asyncio.run(agent.run())
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(agent.run())
     except Exception as e:
         logger.error(f"Error in agent background thread: {e}")
+    finally:
+        try:
+            loop.close()
+        except Exception:
+            pass
 
 @socketio.on('start_voice_agent')
 def handle_start_voice_agent(data):
@@ -253,8 +262,8 @@ def handle_start_voice_agent(data):
     voiceName = data.get("voiceName", "")
     
     voice_agent = VoiceAgent(industry, voiceModel, voiceName)
-    # Start the agent in a new thread, with its own isolated asyncio event loop.
-    socketio.start_background_task(run_agent_in_background, voice_agent)
+    # Start the agent in a new OS thread so asyncio loop doesn't conflict with eventlet
+    threading.Thread(target=run_agent_in_background, args=(voice_agent,), daemon=True).start()
 
 @socketio.on('user_audio')
 def handle_user_audio(audio_data):
