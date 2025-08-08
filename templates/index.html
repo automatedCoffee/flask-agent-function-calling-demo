@@ -152,11 +152,13 @@
                         // Try to send audio if conditions are right
                         if (socket && socket.connected && !isMuted && !isAgentSpeaking) {
                             try {
-                                socket.emit('user_audio', event.data);
+                                // Ensure we send an ArrayBuffer-only payload
+                                const buf = event.data instanceof ArrayBuffer ? event.data : event.data.buffer;
+                                socket.emit('user_audio', buf);
                                 
                                 // Log successful sending
                                 if (Math.random() < 0.05) { // 5% of chunks
-                                    logMessage(`📤 SENT: ${event.data.byteLength} bytes`);
+                                    logMessage(`📤 SENT: ${buf.byteLength} bytes`);
                                 }
                             } catch (error) {
                                 logMessage(`❌ SEND ERROR: ${error}`, 'error');
@@ -268,7 +270,7 @@
                     const pcmData = new Int16Array(audioData.buffer, audioData.byteOffset, numSamples);
                     
                     // Create AudioBuffer
-                    const audioBuffer = audioContext.createBuffer(1, numSamples, 24000);
+                    const audioBuffer = audioContext.createBuffer(1, numSamples, 24000); // Agent audio output is 24kHz
                     const channelData = audioBuffer.getChannelData(0);
                     
                     // Convert Int16 to Float32 and fill the buffer

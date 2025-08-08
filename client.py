@@ -100,10 +100,22 @@ class VoiceAgent:
                 try:
                     audio_chunk = self.audio_queue.get_nowait()
                     if audio_chunk is not None:  # Allow empty buffers for end-of-speech signal
-                        await ws.send(audio_chunk)
-                        # Log when sending empty buffer (end-of-speech signal)
-                        if len(audio_chunk) == 0:
-                            logger.info("Sent end-of-speech signal to Deepgram")
+                        try:
+                            # Coerce to bytes for the Deepgram WS client
+                            if isinstance(audio_chunk, (bytes, bytearray, memoryview)):
+                                data_bytes = bytes(audio_chunk)
+                            elif isinstance(audio_chunk, list):
+                                data_bytes = bytes(audio_chunk)
+                            else:
+                                data_bytes = bytes(audio_chunk)
+
+                            await ws.send(data_bytes)
+
+                            # Log when sending empty buffer (end-of-speech signal)
+                            if len(data_bytes) == 0:
+                                logger.info("Sent end-of-speech signal to Deepgram")
+                        except Exception as send_err:
+                            logger.error(f"Failed to send audio chunk to Deepgram: {send_err}")
                 except queue.Empty:
                     await asyncio.sleep(0.01)
         except asyncio.CancelledError:

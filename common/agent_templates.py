@@ -27,11 +27,13 @@ VOICE = "aura-2-cora-en"
 FIRST_MESSAGE = "Hello, I can help you create a service quote. What is the customer's company name?"
 
 # audio settings
-USER_AUDIO_SAMPLE_RATE = 24000
+# Match browser capture at 16kHz to avoid mismatch-related failures
+USER_AUDIO_SAMPLE_RATE = 16000
 USER_AUDIO_SECS_PER_CHUNK = 1.0 / 50.0  # 20ms
 USER_AUDIO_SAMPLES_PER_CHUNK = round(USER_AUDIO_SAMPLE_RATE * USER_AUDIO_SECS_PER_CHUNK)
 USER_AUDIO_BYTES_PER_SEC = 2 * USER_AUDIO_SAMPLE_RATE
 
+# Keep agent TTS output at 24kHz (Deepgram Aura output)
 AGENT_AUDIO_SAMPLE_RATE = 24000
 AGENT_AUDIO_BYTES_PER_SEC = 2 * AGENT_AUDIO_SAMPLE_RATE
 
@@ -45,7 +47,7 @@ AUDIO_SETTINGS = {
     "output": {
         "encoding": "linear16",
         "sample_rate": AGENT_AUDIO_SAMPLE_RATE,
-        "container": "wav"
+        "container": "none"
     },
 }
 
@@ -151,7 +153,7 @@ class AgentTemplates:
 
         # Set up the settings with the configured voice model and prompt
         # Use a more basic voice model that should work reliably
-        self.settings["agent"]["speak"]["provider"]["model"] = "aura-asteria-en"
+        self.settings["agent"]["speak"]["provider"]["model"] = self.voiceModel or "aura-asteria-en"
         self.settings["agent"]["think"]["prompt"] = self.prompt
         self.settings["agent"]["greeting"] = FIRST_MESSAGE
 
