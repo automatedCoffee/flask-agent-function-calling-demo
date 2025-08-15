@@ -10,8 +10,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const logsContainer = document.getElementById('logsContainer');
     const speakButton = document.getElementById('speakButton');
 
-    let socket = null;
-    let state = {
+    let session = {
+        socket: null,
         isActive: false,
         isMuted: true,
         isAgentSpeaking: false,
@@ -23,13 +23,12 @@ document.addEventListener("DOMContentLoaded", () => {
      * It is called when the audio playback queue is empty.
      */
     function onPlaybackFinished() {
-        state.isAgentSpeaking = false;
-        state.isAgentProcessing = false;
-        setStatus('Agent Ready - Press button to speak');
-        updateSpeakButtonState(state.isActive, state.isAgentSpeaking, state.isAgentProcessing);
+        session.isAgentSpeaking = false;
+        session.isAgentProcessing = false;
+        setStatus('Agent Ready');
+        updateSpeakButtonState(session);
     }
 
-    // Set the callback in the audio module
     setOnPlaybackFinished(onPlaybackFinished);
 
     // --- UI and Logging ---
@@ -92,7 +91,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // --- Core Audio Logic ---
 
     async function startAudio(socket, logMessage, getIsMuted, getIsAgentSpeaking) {
-        if (state.isActive) return false;
+        if (session.isActive) return false;
         setStatus('Initializing...');
         logMessage('Starting audio pipeline...');
 
@@ -141,7 +140,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
             };
 
-            state.isActive = true;
+            session.isActive = true;
             startButton.textContent = 'Stop Voice Agent';
             setStatus('Connected, starting agent...');
             logMessage('Audio pipeline ready.');
@@ -149,10 +148,10 @@ document.addEventListener("DOMContentLoaded", () => {
             logMessage(`Audio mode: Press to Speak button only`);
             
             // Initialize states for new session
-            state.isAgentSpeaking = false;
-            state.isAgentProcessing = false;
-            state.isMuted = true;
-            updateSpeakButtonState(state.isActive, state.isAgentSpeaking, state.isAgentProcessing); // This should keep button disabled until agent is ready
+            session.isAgentSpeaking = false;
+            session.isAgentProcessing = false;
+            session.isMuted = true;
+            updateSpeakButtonState(session); // This should keep button disabled until agent is ready
             
             connectSocket();
             return true;
@@ -165,22 +164,22 @@ document.addEventListener("DOMContentLoaded", () => {
                 logMessage('No microphone found. Please connect a microphone and try again.', 'error');
             }
             setStatus('Error');
-            state.isActive = false;
+            session.isActive = false;
             return false;
         }
     }
 
-    function stopAudio(socket, logMessage) {
-        if (!state.isActive) return;
-        state.isActive = false;
-        state.isAgentSpeaking = false;
-        state.isAgentProcessing = false;
-        state.isMuted = true;
+    function stopAudio(logMessage) {
+        if (!session.isActive) return;
+        session.isActive = false;
+        session.isAgentSpeaking = false;
+        session.isAgentProcessing = false;
+        session.isMuted = true;
         
         logMessage('Stopping audio pipeline...');
-        if (socket) {
-            socket.emit('stop_voice_agent');
-            socket.disconnect();
+        if (session.socket) {
+            session.socket.emit('stop_voice_agent');
+            session.socket.disconnect();
         }
         if (microphoneStream) {
             microphoneStream.getTracks().forEach(track => track.stop());
@@ -201,65 +200,45 @@ document.addEventListener("DOMContentLoaded", () => {
         speakButton.style.background = 'linear-gradient(135deg, #007bff, #0056b3)';
     }
 
-    // --- WebSocket Logic ---
-
     /**
      * Establishes a WebSocket connection and sets up event handlers.
      */
     function connectSocket() {
-        if (socket && socket.connected) {
-            logMessage('📡 Socket already connected');
-            return;
-        }
-
         logMessage('📡 Connecting to socket...');
-        socket = io({
-            transports: ['websocket', 'polling'],
+        session.socket = io({
+            transports: ['websocket'],
             upgrade: true,
             rememberUpgrade: true,
-            timeout: 20000,
+            timeout: 10000,
             forceNew: true
         });
 
-        socket.on('connect', () => {
+        session.socket.on('connect', () => {
             logMessage('📡 Socket connected successfully.');
             setStatus('Connected, starting agent...');
-            socket.emit('start_voice_agent', { voiceModel: voiceModelSelect.value });
+            session.socket.emit('start_voice_agent', { voiceModel: voiceModelSelect.value });
         });
 
-        socket.on('disconnect', (reason) => {
+        session.socket.on('disconnect', (reason) => {
             logMessage(`📡 Socket disconnected: ${reason}`, 'warn');
-            setStatus('Disconnected');
-            // Stop the entire session on disconnect to prevent runaway loops
-            if (state.isActive) {
-                startButton.click(); 
-            }
-        });
-
-        socket.on('connect_error', (error) => {
-            logMessage(`📡 Socket connection error: ${error}`, 'error');
-            setStatus('Connection Error');
-            if (state.isActive) {
+            // On a clean disconnect, shut down the session.
+            if (session.isActive) {
                 startButton.click();
             }
         });
 
-        socket.on('reconnect', (attemptNumber) => {
-            logMessage(`📡 Socket reconnected after ${attemptNumber} attempts`);
-            setStatus('Reconnected');
-            
-            // Restart voice agent if we were active
-            if (state.isActive) {
-                socket.emit('start_voice_agent', { voiceModel: voiceModelSelect.value });
+        session.socket.on('connect_error', (error) => {
+            logMessage(`📡 Socket connection error: ${error}`, 'error');
+            if (session.isActive) {
+                startButton.click();
             }
         });
 
-        socket.on('agent_response', (data) => {
+        session.socket.on('agent_response', (data) => {
             logMessage(`Agent Response: ${JSON.stringify(data)}`);
             switch (data.type) {
                 case 'Welcome':
-                    setStatus('Agent Ready');
-                    logMessage('🎉 Agent connected - waiting for greeting audio');
+                    logMessage('🎉 Agent connected.');
                     break;
                 case 'ConversationText':
                     addConversationMessage('assistant', data.content);
@@ -269,67 +248,66 @@ document.addEventListener("DOMContentLoaded", () => {
                     break;
                 case 'Error':
                     logMessage(`Agent Error: ${data.description}`, 'error');
-                    setStatus('Error');
-                    state.isAgentProcessing = false;
-                    state.isAgentSpeaking = false;
-                    updateSpeakButtonState(state.isActive, state.isAgentSpeaking, state.isAgentProcessing);
+                    session.isAgentProcessing = false;
+                    session.isAgentSpeaking = false;
+                    updateSpeakButtonState(session);
                     break;
             }
         });
 
-        socket.on('agent_audio', (chunk) => {
-            if (!state.isAgentSpeaking) {
-                state.isAgentSpeaking = true;
-                state.isAgentProcessing = false;
+        session.socket.on('agent_audio', (chunk) => {
+            if (!session.isAgentSpeaking) {
+                session.isAgentSpeaking = true;
+                session.isAgentProcessing = false;
                 logMessage('🗣️ Agent started speaking');
                 setStatus('Agent speaking...');
-                updateSpeakButtonState(state.isActive, state.isAgentSpeaking, state.isAgentProcessing);
+                updateSpeakButtonState(session);
             }
             addAudioToQueue(new Uint8Array(chunk), logMessage);
         });
     }
 
     // Function to update speak button state based on current conditions
-    function updateSpeakButtonState(isActive, isAgentSpeaking, isAgentProcessing) {
-        const shouldEnable = isActive && !isAgentSpeaking && !isAgentProcessing;
+    function updateSpeakButtonState(session) {
+        const shouldEnable = session.isActive && !session.isAgentSpeaking && !session.isAgentProcessing;
         speakButton.disabled = !shouldEnable;
         speakButton.style.opacity = shouldEnable ? '1' : '0.6';
         
-        logMessage(`Button state check - Active: ${isActive}, Speaking: ${isAgentSpeaking}, Processing: ${isAgentProcessing}, ShouldEnable: ${shouldEnable}`);
+        logMessage(`Button state check - Active: ${session.isActive}, Speaking: ${session.isAgentSpeaking}, Processing: ${session.isAgentProcessing}, ShouldEnable: ${shouldEnable}`);
         
         if (shouldEnable) {
             logMessage('✅ Hold to Speak button ENABLED');
             speakButton.style.background = 'linear-gradient(135deg, #007bff, #0056b3)';
             speakButton.querySelector('.speak-button-text').textContent = 'Hold to Speak';
         } else {
-            logMessage(`❌ Hold to Speak button DISABLED - Active: ${isActive}, Speaking: ${isAgentSpeaking}, Processing: ${isAgentProcessing}`);
+            logMessage(`❌ Hold to Speak button DISABLED - Active: ${session.isActive}, Speaking: ${session.isAgentSpeaking}, Processing: ${session.isAgentProcessing}`);
         }
     }
 
     // Manual test function for debugging
     window.testButton = function() {
         logMessage('🧪 MANUAL TEST: Forcing button enable');
-        state.isActive = true;
-        state.isAgentSpeaking = false;
-        state.isAgentProcessing = false;
-        updateSpeakButtonState(state.isActive, state.isAgentSpeaking, state.isAgentProcessing);
+        session.isActive = true;
+        session.isAgentSpeaking = false;
+        session.isAgentProcessing = false;
+        updateSpeakButtonState(session);
         logMessage(`🧪 TEST RESULT: Button disabled = ${speakButton.disabled}`);
     };
     
     window.checkStates = function() {
-        logMessage(`📊 STATES: isActive=${state.isActive}, isAgentSpeaking=${state.isAgentSpeaking}, isAgentProcessing=${state.isAgentProcessing}, isMuted=${state.isMuted}`);
-        logMessage(`📊 BUTTON: disabled=${speakButton.disabled}, socket=${socket?.connected}`);
+        logMessage(`📊 STATES: isActive=${session.isActive}, isAgentSpeaking=${session.isAgentSpeaking}, isAgentProcessing=${session.isAgentProcessing}, isMuted=${session.isMuted}`);
+        logMessage(`📊 BUTTON: disabled=${speakButton.disabled}, socket=${session.socket?.connected}`);
     };
     
     window.forceStart = function() {
         logMessage('🔧 FORCE START: Manually starting speaking');
-        state.isMuted = false;
-        logMessage(`🔧 isMuted is now: ${state.isMuted}`);
+        session.isMuted = false;
+        logMessage(`🔧 isMuted is now: ${session.isMuted}`);
     };
     
     window.testSpeak = function() {
         logMessage(' TEST: Manual speak test');
-        if (state.isMuted) {
+        if (session.isMuted) {
             startSpeaking();
             logMessage('🧪 Started speaking for 5 seconds');
             setTimeout(() => {
@@ -344,11 +322,11 @@ document.addEventListener("DOMContentLoaded", () => {
     
     window.checkSocket = function() {
         logMessage(`📡 SOCKET CHECK:`);
-        logMessage(`  - exists: ${socket ? 'YES' : 'NO'}`);
-        logMessage(`  - connected: ${socket?.connected}`);
-        logMessage(`  - id: ${socket?.id || 'N/A'}`);
-        if (socket) {
-            logMessage(`  - transport: ${socket.io?.engine?.transport?.name || 'N/A'}`);
+        logMessage(`  - exists: ${session.socket ? 'YES' : 'NO'}`);
+        logMessage(`  - connected: ${session.socket?.connected}`);
+        logMessage(`  - id: ${session.socket?.id || 'N/A'}`);
+        if (session.socket) {
+            logMessage(`  - transport: ${session.socket.io?.engine?.transport?.name || 'N/A'}`);
         }
     };
     
@@ -373,14 +351,14 @@ document.addEventListener("DOMContentLoaded", () => {
     
     // Periodic socket health check
     setInterval(() => {
-        if (socket && !socket.connected && state.isActive) {
+        if (session.socket && !session.socket.connected && session.isActive) {
             logMessage('⚠️ HEALTH CHECK: Socket disconnected while active, attempting reconnect');
-            socket.connect();
+            session.socket.connect();
         }
         
         // Also log socket status periodically when active
-        if (state.isActive && Math.random() < 0.1) { // 10% chance each check
-            logMessage(`💓 HEALTH: Socket connected: ${socket?.connected}, Active: ${state.isActive}, Speaking: ${!state.isMuted}`);
+        if (session.isActive && Math.random() < 0.1) { // 10% chance each check
+            logMessage(`💓 HEALTH: Socket connected: ${session.socket?.connected}, Active: ${session.isActive}, Speaking: ${!session.isMuted}`);
         }
     }, 2000); // Check every 2 seconds instead of 5
 
@@ -388,8 +366,8 @@ document.addEventListener("DOMContentLoaded", () => {
     function startSpeaking() {
         logMessage(`🎤 startSpeaking() ENTRY - disabled: ${speakButton.disabled}`);
         if (!speakButton.disabled) {
-            state.isMuted = false;
-            logMessage(`✅ UNMUTED - isMuted is now: ${state.isMuted}`, 'user');
+            session.isMuted = false;
+            logMessage(`✅ UNMUTED - isMuted is now: ${session.isMuted}`, 'user');
             setStatus('🎤 SPEAKING - Hold button and talk');
             speakButton.querySelector('.speak-button-text').textContent = 'Speaking...';
             speakButton.style.background = 'linear-gradient(135deg, #28a745, #1e7e34)';
@@ -399,38 +377,53 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function stopSpeaking() {
-        if (!state.isMuted) {
-            state.isMuted = true;
-            state.isAgentProcessing = true;
-            logMessage(`🛑 MUTED - isMuted is now: ${state.isMuted}`);
+        if (!session.isMuted) {
+            session.isMuted = true;
+            session.isAgentProcessing = true;
+            logMessage(`🛑 MUTED - isMuted is now: ${session.isMuted}`);
             setStatus('Agent processing...');
             speakButton.querySelector('.speak-button-text').textContent = 'Processing...';
             speakButton.style.background = 'linear-gradient(135deg, #ffc107, #e0a800)';
-            updateSpeakButtonState(state.isActive, state.isAgentSpeaking, state.isAgentProcessing);
+            updateSpeakButtonState(session);
             
-            if (socket && socket.connected) {
-                logMessage('📡 Sending end-of-speech signal');
-                socket.emit('user_audio', new ArrayBuffer(0));
+            if (session.socket && session.socket.connected) {
+                session.socket.emit('user_audio', new ArrayBuffer(0));
             }
         }
     }
 
     // --- Event Listeners ---
     startButton.addEventListener('click', async () => {
-        if (state.isActive) {
-            stopAudio(socket, logMessage);
-            socket = null;
-            state = { isActive: false, isMuted: true, isAgentSpeaking: false, isAgentProcessing: false };
+        if (session.isActive) {
+            // --- Stop the session ---
+            logMessage('Session stopping...');
+            if (session.socket) {
+                session.socket.emit('stop_voice_agent');
+                session.socket.disconnect();
+                session.socket = null;
+            }
+            stopAudio(logMessage);
+            session = { isActive: false, isMuted: true, isAgentSpeaking: false, isAgentProcessing: false };
             setStatus('Inactive');
             startButton.textContent = 'Start Voice Agent';
-            updateSpeakButtonState(state.isActive, state.isAgentSpeaking, state.isAgentProcessing);
+            updateSpeakButtonState(session);
+            logMessage('Session stopped.');
         } else {
+            // --- Start the session ---
+            logMessage('Session starting...');
             setStatus('Initializing...');
-            const audioStarted = await startAudio(socket, logMessage, () => state.isMuted, () => state.isAgentSpeaking);
+            
+            const audioStarted = await startAudio(
+                () => session.socket,
+                logMessage,
+                () => session.isMuted,
+                () => session.isAgentSpeaking
+            );
+
             if (audioStarted) {
-                state.isActive = true;
+                session.isActive = true;
                 startButton.textContent = 'Stop Voice Agent';
-                updateSpeakButtonState(state.isActive, state.isAgentSpeaking, state.isAgentProcessing);
+                updateSpeakButtonState(session);
                 connectSocket();
             } else {
                  setStatus('Error starting audio.');
@@ -447,7 +440,7 @@ document.addEventListener("DOMContentLoaded", () => {
     speakButton.addEventListener('touchcancel', (e) => { e.preventDefault(); stopSpeaking(); }, { passive: false });
     
     // Initialize
-    updateSpeakButtonState(state.isActive, state.isAgentSpeaking, state.isAgentProcessing);
+    updateSpeakButtonState(session);
     
     // Debug button element
     logMessage(`🔍 Button element found: ${speakButton ? 'YES' : 'NO'}`);

@@ -35,6 +35,10 @@ function playFromQueue(logMessage) {
     const audioData = audioQueue.shift();
 
     try {
+        if (!audioContext) {
+            logMessage('Audio context is not available for playback.', 'error');
+            return;
+        }
         const numSamples = audioData.length / 2;
         const pcmData = new Int16Array(audioData.buffer, audioData.byteOffset, numSamples);
         const audioBuffer = audioContext.createBuffer(1, numSamples, 24000); // Agent audio is 24kHz
@@ -76,13 +80,13 @@ function addAudioToQueue(audioData, logMessage) {
 
 /**
  * Initializes the AudioContext and microphone stream.
- * @param {Object} socket - The Socket.IO client instance.
+ * @param {Function} getSocket - A function that returns the current Socket.IO client instance.
  * @param {Function} logMessage - The logging function.
  * @param {Function} getMutedState - A function that returns the current muted state.
  * @param {Function} getAgentSpeakingState - A function that returns the agent's speaking state.
  * @returns {Promise<boolean>} - True if successful, false otherwise.
  */
-async function startAudio(socket, logMessage, getMutedState, getAgentSpeakingState) {
+async function startAudio(getSocket, logMessage, getMutedState, getAgentSpeakingState) {
     if (audioContext) {
         return true;
     }
@@ -102,6 +106,7 @@ async function startAudio(socket, logMessage, getMutedState, getAgentSpeakingSta
         microphone.connect(audioWorkletNode);
 
         audioWorkletNode.port.onmessage = (event) => {
+            const socket = getSocket();
             if (socket && socket.connected && !getMutedState() && !getAgentSpeakingState()) {
                 const buf = event.data instanceof ArrayBuffer ? event.data : event.data.buffer;
                 socket.emit('user_audio', buf);
@@ -109,7 +114,6 @@ async function startAudio(socket, logMessage, getMutedState, getAgentSpeakingSta
         };
 
         logMessage('Audio pipeline ready.');
-        logMessage(`Microphone connected - Sample rate: ${audioContext.sampleRate}Hz`);
         return true;
     } catch (error) {
         logMessage(`Failed to start audio: ${error}`, 'error');
@@ -125,14 +129,9 @@ async function startAudio(socket, logMessage, getMutedState, getAgentSpeakingSta
 
 /**
  * Stops the audio pipeline and closes the microphone stream.
- * @param {Object} socket - The Socket.IO client instance.
  * @param {Function} logMessage - The logging function.
  */
-function stopAudio(socket, logMessage) {
-    if (socket) {
-        socket.emit('stop_voice_agent');
-        socket.disconnect();
-    }
+function stopAudio(logMessage) {
     if (microphoneStream) {
         microphoneStream.getTracks().forEach(track => track.stop());
         microphoneStream = null;
