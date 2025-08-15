@@ -8,6 +8,7 @@ import requests
 import os
 from pathlib import Path
 from dotenv import load_dotenv
+from common.dns_fix import force_dns_resolution
 
 # Load environment variables first
 load_dotenv()
@@ -318,7 +319,7 @@ def get_customer_backendless(company_name):
         print(f"Where clause: {where_clause}")
         
         # Make the API request to Backendless
-        response = requests.get(
+        response = force_dns_resolution(
             api_url,
             params={'where': where_clause},
             timeout=30  # Add timeout to prevent hanging
@@ -427,7 +428,7 @@ def get_location_backendless(customer_oid, address_string):
         print(f"Where clause: {where_clause}")
         
         # Make the API request to Backendless
-        response = requests.get(
+        response = force_dns_resolution(
             api_url,
             params={
                 'where': where_clause,
@@ -538,8 +539,9 @@ def post_quote_backendless(quote_data):
         print(f"Making POST request to: {api_url}")
         
         # Make the API request to Backendless
-        response = requests.post(
+        response = force_dns_resolution(
             api_url,
+            method='post',
             json=quote_data
         )
         

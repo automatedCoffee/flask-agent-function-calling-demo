@@ -15,6 +15,7 @@ from common.agent_templates import AgentTemplates
 import logging
 from common.log_formatter import CustomFormatter
 import threading
+from common.dns_fix import force_dns_resolution
 
 # Load environment variables from .env file
 load_dotenv()
@@ -64,7 +65,7 @@ def get_tts_models():
         dg_api_key = os.environ.get("DEEPGRAM_API_KEY")
         if not dg_api_key:
             return jsonify({"error": "DEEPGRAM_API_KEY not set"}), 500
-        response = requests.get(
+        response = force_dns_resolution(
             "https://api.deepgram.com/v1/models",
             headers={"Authorization": f"Token {dg_api_key}"},
             timeout=5,
