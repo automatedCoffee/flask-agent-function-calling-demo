@@ -44,4 +44,4 @@ RUN chmod +x /start.sh
 ENTRYPOINT ["/start.sh"]
 
 # Production command using gunicorn
-CMD ["gunicorn", "--worker-class", "eventlet", "-w", "1", "--bind", "0.0.0.0:5000", "client:app"] 
+CMD ["gunicorn", "--worker-class", "geventwebsocket.gunicorn.workers.GeventWebSocketWorker", "-w", "1", "--bind", "0.0.0.0:5000", "client:app"] 
