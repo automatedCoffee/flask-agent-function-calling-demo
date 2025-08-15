@@ -16,6 +16,7 @@ document.addEventListener("DOMContentLoaded", () => {
         isMuted: true,
         isAgentSpeaking: false,
         isAgentProcessing: false,
+        isConnecting: false, // Add a lock to prevent race conditions
     };
 
     /**
@@ -204,6 +205,12 @@ document.addEventListener("DOMContentLoaded", () => {
      * Establishes a WebSocket connection and sets up event handlers.
      */
     function connectSocket() {
+        if (session.isConnecting || (session.socket && session.socket.connected)) {
+            logMessage('📡 Connection attempt blocked: already connecting or connected.', 'warn');
+            return;
+        }
+
+        session.isConnecting = true;
         logMessage('📡 Connecting to socket...');
         session.socket = io({
             transports: ['websocket'],
@@ -214,6 +221,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
 
         session.socket.on('connect', () => {
+            session.isConnecting = false;
             logMessage('📡 Socket connected successfully.');
             setStatus('Connected, starting agent...');
             session.socket.emit('start_voice_agent', { voiceModel: voiceModelSelect.value });
@@ -229,6 +237,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         session.socket.on('connect_error', (error) => {
             logMessage(`📡 Socket connection error: ${error}`, 'error');
+            session.isConnecting = false;
             if (session.isActive) {
                 startButton.click();
             }
@@ -403,7 +412,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 session.socket = null;
             }
             stopAudio(logMessage);
-            session = { isActive: false, isMuted: true, isAgentSpeaking: false, isAgentProcessing: false };
+            session = { isActive: false, isMuted: true, isAgentSpeaking: false, isAgentProcessing: false, isConnecting: false };
             setStatus('Inactive');
             startButton.textContent = 'Start Voice Agent';
             updateSpeakButtonState(session);
