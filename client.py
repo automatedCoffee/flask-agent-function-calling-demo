@@ -12,6 +12,8 @@ from common.agent_templates import AgentTemplates
 import logging
 from common.log_formatter import CustomFormatter
 import threading
+import signal # Import the signal module
+import time # Import the time module
 
 # Load environment variables from .env file
 load_dotenv()
@@ -40,6 +42,24 @@ console_handler = logging.StreamHandler()
 console_handler.setFormatter(CustomFormatter())
 logger.addHandler(console_handler)
 logger.propagate = False
+
+
+# --- Graceful Shutdown Handler ---
+# This ensures that background threads and loops are terminated correctly
+_shutdown_event = threading.Event()
+
+def _graceful_shutdown_handler(signum, frame):
+    """Signal handler for graceful shutdown."""
+    logger.info("Shutdown signal received. Cleaning up...")
+    _shutdown_event.set()
+    # Allow some time for threads to clean up
+    time.sleep(1) 
+    # In a real-world app, you might need more sophisticated cleanup here
+    os._exit(0)
+
+# Register signal handlers for graceful termination
+signal.signal(signal.SIGINT, _graceful_shutdown_handler)
+signal.signal(signal.SIGTERM, _graceful_shutdown_handler)
 
 
 # --- Flask Routes ---
@@ -96,14 +116,15 @@ class VoiceAgent:
         self.agent_templates = AgentTemplates(industry=industry, voiceModel=voiceModel, voiceName=voiceName)
 
     def send_audio(self, audio_chunk):
-        self.audio_queue.put(audio_chunk)
+        if self.is_running:
+            self.audio_queue.put(audio_chunk)
 
     async def _audio_sender(self, ws):
         try:
-            while self.is_running:
+            while self.is_running and not _shutdown_event.is_set():
                 try:
                     audio_chunk = self.audio_queue.get_nowait()
-                    if audio_chunk is not None:  # Allow empty buffers for end-of-speech signal
+                    if audio_chunk is not None:
                         try:
                             # Coerce to bytes for the Deepgram WS client
                             if isinstance(audio_chunk, (bytes, bytearray, memoryview)):
@@ -126,10 +147,14 @@ class VoiceAgent:
             logger.info("Audio sender task cancelled.")
         except Exception as e:
             logger.error(f"Error in audio sender: {e}")
+        finally:
+            logger.info("Audio sender loop finished.")
 
     async def _receiver(self, ws):
         try:
             async for message in ws:
+                if not self.is_running or _shutdown_event.is_set():
+                    break
                 try:
                     if isinstance(message, str):
                         msg_json = json.loads(message)
@@ -143,6 +168,8 @@ class VoiceAgent:
                     logger.error(f"Error processing received message: {e}")
         except Exception as e:
             logger.error(f"Receiver loop error: {e}")
+        finally:
+            logger.info("Receiver loop finished.")
 
     async def _handle_function_call(self, ws, function_call_msg):
         logger.info(f"Received function call request: {json.dumps(function_call_msg, indent=2)}")
@@ -213,8 +240,10 @@ class VoiceAgent:
             self.dg_client = await websockets.connect(
                 self.agent_templates.voice_agent_url,
                 extra_headers={"Authorization": f"Token {api_key}"},
-                open_timeout=10,
-                close_timeout=10,
+                open_timeout=20, # Increased timeout
+                close_timeout=20,
+                ping_interval=10, # More frequent pings
+                ping_timeout=30
             )
             logger.info("Successfully connected to Deepgram.")
             self.is_running = True
@@ -224,45 +253,66 @@ class VoiceAgent:
 
             sender_task = asyncio.create_task(self._audio_sender(self.dg_client))
             receiver_task = asyncio.create_task(self._receiver(self.dg_client))
-            await asyncio.gather(sender_task, receiver_task)
+
+            # Wait for tasks to complete or for the agent to be stopped
+            done, pending = await asyncio.wait(
+                {sender_task, receiver_task},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+
+            for task in pending:
+                task.cancel()
+
+        except websockets.exceptions.ConnectionClosed as e:
+            logger.error(f"Deepgram connection closed unexpectedly: {e}")
+        except asyncio.CancelledError:
+            logger.info("Agent run task was cancelled.")
         except Exception as e:
             logger.error(f"Error during agent run: {e}")
         finally:
             self.is_running = False
-            if self.dg_client:
+            if self.dg_client and self.dg_client.open:
                 await self.dg_client.close()
-            logger.info("Agent run loop finished.")
+            logger.info("Agent run loop finished and connection closed.")
+
+    def stop(self):
+        """Signals the agent to stop its loops gracefully."""
+        logger.info("Stop signal received for voice agent.")
+        self.is_running = False
+
 
 # --- SocketIO Event Handlers ---
 voice_agent = None
 # Guard to prevent concurrent starts
 _start_lock = threading.Lock()
 _agent_starting = False
+_agent_thread = None # Keep track of the agent thread
 
 
 def run_agent_in_background(agent: VoiceAgent) -> None:
     """Run the agent's async loop in a dedicated OS thread with its own event loop."""
     global _agent_starting, voice_agent
+    loop = None
     try:
+        logger.info(f"Starting new background thread for agent: {threading.current_thread().name}")
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         loop.run_until_complete(agent.run())
     except Exception as e:
         logger.error(f"Error in agent background thread: {e}")
     finally:
-        try:
+        if loop:
             loop.close()
-        except Exception:
-            pass
-        # Allow future starts
+        logger.info(f"Background thread finished for agent: {threading.current_thread().name}")
         with _start_lock:
             _agent_starting = False
-            if voice_agent and not voice_agent.is_running:
+            if voice_agent is agent: # Only clear if it's the same instance
                 voice_agent = None
+
 
 @socketio.on('start_voice_agent')
 def handle_start_voice_agent(data):
-    global voice_agent, _agent_starting
+    global voice_agent, _agent_starting, _agent_thread
     with _start_lock:
         if _agent_starting:
             logger.info("Voice agent start already in progress; ignoring duplicate start request.")
@@ -280,7 +330,9 @@ def handle_start_voice_agent(data):
     
     voice_agent = VoiceAgent(industry, voiceModel, voiceName)
     # Start the agent in a new OS thread so asyncio loop doesn't conflict with eventlet
-    threading.Thread(target=run_agent_in_background, args=(voice_agent,), daemon=True).start()
+    _agent_thread = threading.Thread(target=run_agent_in_background, args=(voice_agent,), daemon=True)
+    _agent_thread.start()
+
 
 @socketio.on('user_audio')
 def handle_user_audio(audio_data):
@@ -289,18 +341,30 @@ def handle_user_audio(audio_data):
 
 @socketio.on('stop_voice_agent')
 def handle_stop_voice_agent():
-    global voice_agent
+    global voice_agent, _agent_thread
+    logger.info("Received stop_voice_agent event.")
     if voice_agent:
-        voice_agent.is_running = False
-    voice_agent = None
+        voice_agent.stop() # Gracefully stop the agent's loops
+        voice_agent = None
+    if _agent_thread and _agent_thread.is_alive():
+        logger.info("Waiting for agent thread to finish.")
+        _agent_thread.join(timeout=5) # Wait for thread to finish
+        if _agent_thread.is_alive():
+            logger.warning("Agent thread did not finish in time.")
+    _agent_thread = None
+
 
 @socketio.on('disconnect')
 def handle_disconnect():
-    global voice_agent
+    global voice_agent, _agent_thread
     logger.info("Client disconnected.")
     if voice_agent:
-        voice_agent.is_running = False
+        voice_agent.stop()
+    if _agent_thread and _agent_thread.is_alive():
+        _agent_thread.join(timeout=2)
     voice_agent = None
+    _agent_thread = None
+
 
 # --- Main Execution ---
 if __name__ == "__main__":
@@ -308,4 +372,10 @@ if __name__ == "__main__":
     port = 5000
     logger.info(f"Starting Flask server on {host}:{port}")
     # Use eventlet when available for WebSocket support in dev
-    socketio.run(app, host=host, port=port)
+    try:
+        socketio.run(app, host=host, port=port)
+    except KeyboardInterrupt:
+        logger.info("KeyboardInterrupt received, shutting down.")
+        _shutdown_event.set()
+    finally:
+        logger.info("Server has been shut down.")
