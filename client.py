@@ -201,14 +201,14 @@ class VoiceAgent:
                     response = {
                         "type": "FunctionCallResponse", 
                         "call_id": function_id, 
-                        "result": json.dumps(result)  # Stringify the result
+                        "result": result  # Send the result as a JSON object, not a string
                     }
                 except json.JSONDecodeError as e:
                     logger.error(f"Error parsing arguments for {function_name}: {e}")
                     response = {
                         "type": "FunctionCallResponse", 
                         "call_id": function_id, 
-                        "result": json.dumps({"error": f"Invalid arguments format: {str(e)}", "success": False})
+                        "result": {"error": f"Invalid arguments format: {str(e)}", "success": False}
                     }
                 except Exception as e:
                     logger.error(f"Error executing function {function_name}: {e}")
@@ -216,14 +216,14 @@ class VoiceAgent:
                     response = {
                         "type": "FunctionCallResponse", 
                         "call_id": function_id, 
-                        "result": json.dumps({"error": str(e), "success": False})
+                        "result": {"error": str(e), "success": False}
                     }
             else:
                 logger.error(f"Function {function_name} not found in FUNCTION_MAP: {list(FUNCTION_MAP.keys())}")
                 response = {
                     "type": "FunctionCallResponse", 
                     "call_id": function_id, 
-                    "result": json.dumps({"error": f"Function {function_name} not found.", "success": False})
+                    "result": {"error": f"Function {function_name} not found.", "success": False}
                 }
             
             logger.info(f"Sending function response: {json.dumps(response, indent=2)}")

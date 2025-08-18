@@ -27,8 +27,10 @@ function playFromQueue(logMessage) {
         if (onPlaybackFinishedCallback) {
             // Add a small delay to ensure the last chunk has finished
             setTimeout(() => {
-                logMessage('🏁 Audio playback queue finished.');
-                onPlaybackFinishedCallback();
+                if (audioQueue.length === 0) { // Double-check queue is still empty
+                    logMessage('🏁 Audio playback queue finished.');
+                    onPlaybackFinishedCallback();
+                }
             }, 200); // 200ms delay
         }
         return;
@@ -44,16 +46,16 @@ function playFromQueue(logMessage) {
             return;
         }
 
-        // The audio from the agent is 24kHz, 16-bit PCM
-        const numSamples = audioData.length / 2; // 2 bytes per sample
-        const pcmData = new Int16Array(audioData.buffer, audioData.byteOffset, numSamples);
-        const audioBuffer = audioContext.createBuffer(1, numSamples, 24000); 
+        // Decode the raw PCM data into an AudioBuffer
+        const numSamples = audioData.length / 2; // 2 bytes per sample (16-bit)
+        const audioBuffer = audioContext.createBuffer(1, numSamples, 24000); // Agent audio is 24kHz
         const channelData = audioBuffer.getChannelData(0);
-        
+        const pcmData = new Int16Array(audioData.buffer);
+
         for (let i = 0; i < numSamples; i++) {
             channelData[i] = pcmData[i] / 32768.0; // Convert to Float32 range [-1, 1]
         }
-
+        
         const source = audioContext.createBufferSource();
         source.buffer = audioBuffer;
         source.connect(audioContext.destination);
@@ -68,16 +70,18 @@ function playFromQueue(logMessage) {
         // Schedule the next chunk to start right after this one ends
         nextPlayTime += audioBuffer.duration;
         
-        // Continue processing the queue without waiting for 'onended'
-        playFromQueue(logMessage);
+        source.onended = () => {
+            playFromQueue(logMessage);
+        };
 
     } catch (error) {
         logMessage(`Error playing raw PCM: ${error}`, 'error');
         console.error('Raw PCM playback error:', error);
-        // Try to continue with the next item
+        // Try to continue with the next item even if one fails
         playFromQueue(logMessage); 
     }
 }
+
 
 /**
  * Adds a new audio chunk to the playback queue.
@@ -92,7 +96,9 @@ function addAudioToQueue(audioData, logMessage) {
     if (audioContext.state === 'suspended') {
         audioContext.resume();
     }
+
     audioQueue.push(audioData);
+
     if (!isAudioPlaying) {
         // Reset scheduling time and start the playback loop
         nextPlayTime = audioContext.currentTime;
