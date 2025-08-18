@@ -86,7 +86,8 @@ FUNCTION_DEFINITIONS = [
                 }
             },
             "required": ["company_name"]
-        }
+        },
+        "client_side": False
     },
     {
         "name": "get_location",
@@ -104,7 +105,8 @@ FUNCTION_DEFINITIONS = [
                 }
             },
             "required": ["customer_oid", "address_string"]
-        }
+        },
+        "client_side": False
     },
     {
         "name": "post_quote",
@@ -158,7 +160,8 @@ FUNCTION_DEFINITIONS = [
                 "print_customer_name", "customer_oid", "print_account", 
                 "print_address_string", "scheduled_date", "requestor", "job_name"
             ]
-        }
+        },
+        "client_side": False
     }
 ]
 
