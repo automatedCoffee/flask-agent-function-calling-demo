@@ -161,6 +161,12 @@ class VoiceAgent:
                         socketio.emit("agent_response", msg_json)
                         logger.info(f"Server -> Browser: {json.dumps(msg_json)}")
                         if msg_json.get("type") == 'FunctionCallRequest':
+                            # Clear any lingering audio chunks from the queue. This is crucial to prevent
+                            # a race condition where an old "end-of-speech" signal gets sent after
+                            # the function call response, confusing the Deepgram API.
+                            while not self.audio_queue.empty():
+                                self.audio_queue.get_nowait()
+                            logger.info("Audio queue cleared for function call.")
                             await self._handle_function_call(ws, msg_json)
                     elif isinstance(message, bytes):
                         socketio.emit('agent_audio', message)
