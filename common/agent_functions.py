@@ -28,48 +28,34 @@ def get_location(params):
 
 def post_quote(params):
     """Post a structured quote request to Backendless."""
-    # Extract individual parameters instead of expecting a nested quote_data object
-    status = params.get("status", "PRE-ESTIMATE")
-    print_customer_name = params.get("print_customer_name")
-    customer_oid = params.get("customer_oid")
-    print_account = params.get("print_account")
-    print_address_string = params.get("print_address_string")
-    scheduled_date = params.get("scheduled_date")
-    requestor = params.get("requestor")
-    pre_quote_data = params.get("pre_quote_data")
-    job_name = params.get("job_name")
-    prelim_quote = params.get("prelim_quote")
-    
-    # Validate required fields
-    required_fields = {
-        "print_customer_name": print_customer_name,
-        "customer_oid": customer_oid,
-        "print_account": print_account,
-        "print_address_string": print_address_string,
-        "scheduled_date": scheduled_date,
-        "requestor": requestor,
-        "job_name": job_name
-    }
-    
-    missing_fields = [field for field, value in required_fields.items() if not value]
+    quote_data = params.get("quote_data")
+    if not quote_data:
+        return {"error": "quote_data is required."}
+
+    # Validate required fields within the quote_data object
+    required_fields = [
+        "print_customer_name", "customer_oid", "print_account",
+        "print_address_string", "scheduled_date", "requestor", "job_name"
+    ]
+    missing_fields = [field for field in required_fields if field not in quote_data]
     if missing_fields:
-        return {"error": f"Missing required fields: {', '.join(missing_fields)}"}
-    
-    # Structure the payload according to the user's specifications
-    quote_data = {
-        "Status": status,
-        "printCustomerName": print_customer_name,
-        "CustomerOid": customer_oid,
-        "printAccount": print_account,
-        "PrintAddressString": print_address_string,
-        "scheduleddate": scheduled_date,
-        "Requestor": requestor,
-        "pre_quote_data": pre_quote_data or "No additional details provided",
-        "JobName": job_name,
-        "prelim_quote": prelim_quote or "Quote details to be determined"
+        return {"error": f"Missing required fields in quote_data: {', '.join(missing_fields)}"}
+
+    # Structure the payload for the backendless API
+    payload = {
+        "Status": quote_data.get("status", "PRE-ESTIMATE"),
+        "printCustomerName": quote_data["print_customer_name"],
+        "CustomerOid": quote_data["customer_oid"],
+        "printAccount": quote_data["print_account"],
+        "PrintAddressString": quote_data["print_address_string"],
+        "scheduleddate": quote_data["scheduled_date"],
+        "Requestor": quote_data["requestor"],
+        "pre_quote_data": quote_data.get("pre_quote_data", "No additional details provided"),
+        "JobName": quote_data["job_name"],
+        "prelim_quote": quote_data.get("prelim_quote", "Quote details to be determined")
     }
-    
-    result = post_quote_backendless(quote_data)
+
+    result = post_quote_backendless(payload)
     return result
 
 # Function definitions that will be sent to the Voice Agent API
@@ -86,8 +72,7 @@ FUNCTION_DEFINITIONS = [
                 }
             },
             "required": ["company_name"]
-        },
-        "client_side": False
+        }
     },
     {
         "name": "get_location",
@@ -105,8 +90,7 @@ FUNCTION_DEFINITIONS = [
                 }
             },
             "required": ["customer_oid", "address_string"]
-        },
-        "client_side": False
+        }
     },
     {
         "name": "post_quote",
@@ -114,54 +98,60 @@ FUNCTION_DEFINITIONS = [
         "parameters": {
             "type": "object",
             "properties": {
-                "status": {
-                    "type": "string",
-                    "description": "The status of the quote. Default is 'PRE-ESTIMATE'.",
-                    "default": "PRE-ESTIMATE"
-                },
-                "print_customer_name": {
-                    "type": "string",
-                    "description": "The customer company name from get_customer function result (customers.company field)."
-                },
-                "customer_oid": {
-                    "type": "string",
-                    "description": "The customer object ID from get_customer function result (customers.objectId field)."
-                },
-                "print_account": {
-                    "type": "string",
-                    "description": "The account name from get_location function result (locations.ParentAccountName field)."
-                },
-                "print_address_string": {
-                    "type": "string",
-                    "description": "The address string from get_location function result (locations.addressonlystring field)."
-                },
-                "scheduled_date": {
-                    "type": "string",
-                    "description": "The date of service provided by the user (userInput). Format: YYYY-MM-DD or user's preferred format."
-                },
-                "requestor": {
-                    "type": "string",
-                    "description": "The customer job contact name provided by the user (userInput)."
-                },
-                "pre_quote_data": {
-                    "type": "string",
-                    "description": "Scope of work and extra information provided by the user (userInput). Optional field."
-                },
-                "job_name": {
-                    "type": "string",
-                    "description": "The name of the job provided by the user (userInput)."
-                },
-                "prelim_quote": {
-                    "type": "string",
-                    "description": "Free form text field to store quote information provided by the user (userInput). Optional field."
+                "quote_data": {
+                    "type": "object",
+                    "description": "A structured object containing all the necessary details for the quote.",
+                    "properties": {
+                        "status": {
+                            "type": "string",
+                            "description": "The status of the quote. Default is 'PRE-ESTIMATE'.",
+                            "default": "PRE-ESTIMATE"
+                        },
+                        "print_customer_name": {
+                            "type": "string",
+                            "description": "The customer company name from get_customer function result (customers.company field)."
+                        },
+                        "customer_oid": {
+                            "type": "string",
+                            "description": "The customer object ID from get_customer function result (customers.objectId field)."
+                        },
+                        "print_account": {
+                            "type": "string",
+                            "description": "The account name from get_location function result (locations.ParentAccountName field)."
+                        },
+                        "print_address_string": {
+                            "type": "string",
+                            "description": "The address string from get_location function result (locations.addressonlystring field)."
+                        },
+                        "scheduled_date": {
+                            "type": "string",
+                            "description": "The date of service provided by the user (userInput). Format: YYYY-MM-DD or user's preferred format."
+                        },
+                        "requestor": {
+                            "type": "string",
+                            "description": "The customer job contact name provided by the user (userInput)."
+                        },
+                        "pre_quote_data": {
+                            "type": "string",
+                            "description": "Scope of work and extra information provided by the user (userInput). Optional field."
+                        },
+                        "job_name": {
+                            "type": "string",
+                            "description": "The name of the job provided by the user (userInput)."
+                        },
+                        "prelim_quote": {
+                            "type": "string",
+                            "description": "Free form text field to store quote information provided by the user (userInput). Optional field."
+                        }
+                    },
+                    "required": [
+                        "print_customer_name", "customer_oid", "print_account", 
+                        "print_address_string", "scheduled_date", "requestor", "job_name"
+                    ]
                 }
             },
-            "required": [
-                "print_customer_name", "customer_oid", "print_account", 
-                "print_address_string", "scheduled_date", "requestor", "job_name"
-            ]
-        },
-        "client_side": False
+            "required": ["quote_data"]
+        }
     }
 ]
 
