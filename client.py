@@ -205,31 +205,35 @@ class VoiceAgent:
                     
                     # Format response to match Deepgram's expected structure
                     response = {
-                        "type": "FunctionCallResponse", 
-                        "call_id": function_id, 
-                        "result": result  # Send the result as a JSON object, not a string
+                        "type": "FunctionCallResponse",
+                        "id": function_id,
+                        "name": function_name,
+                        "content": json.dumps(result)
                     }
                 except json.JSONDecodeError as e:
                     logger.error(f"Error parsing arguments for {function_name}: {e}")
                     response = {
-                        "type": "FunctionCallResponse", 
-                        "call_id": function_id, 
-                        "result": {"error": f"Invalid arguments format: {str(e)}", "success": False}
+                        "type": "FunctionCallResponse",
+                        "id": function_id,
+                        "name": function_name,
+                        "content": json.dumps({"error": f"Invalid arguments format: {str(e)}", "success": False})
                     }
                 except Exception as e:
                     logger.error(f"Error executing function {function_name}: {e}")
                     logger.error(f"Function signature expects: params dict, got: {type(arguments)}")
                     response = {
-                        "type": "FunctionCallResponse", 
-                        "call_id": function_id, 
-                        "result": {"error": str(e), "success": False}
+                        "type": "FunctionCallResponse",
+                        "id": function_id,
+                        "name": function_name,
+                        "content": json.dumps({"error": str(e), "success": False})
                     }
             else:
                 logger.error(f"Function {function_name} not found in FUNCTION_MAP: {list(FUNCTION_MAP.keys())}")
                 response = {
-                    "type": "FunctionCallResponse", 
-                    "call_id": function_id, 
-                    "result": {"error": f"Function {function_name} not found.", "success": False}
+                    "type": "FunctionCallResponse",
+                    "id": function_id,
+                    "name": function_name,
+                    "content": json.dumps({"error": f"Function {function_name} not found.", "success": False})
                 }
             
             logger.info(f"Sending function response: {json.dumps(response, indent=2)}")
