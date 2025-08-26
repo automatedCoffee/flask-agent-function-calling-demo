@@ -22,7 +22,64 @@ These changes result in a much smoother and more reliable user experience, elimi
 -   **Real-time Voice Interaction:** Speak with the agent in real-time to provide details for a service quote.
 -   **Function Calling:** The agent can call backend functions to look up customer information and create quotes in a simulated ERP system (Backendless).
 -   **Dynamic UI:** The UI provides real-time status updates, conversation history, and debug logs.
+-   **Session Persistence:** Conversations survive server restarts and can be resumed.
+-   **Automatic Reconnection:** Robust connection handling with automatic recovery.
 -   **Modular Codebase:** The code is organized into logical modules for easier maintenance and extension.
+
+## Production Deployment
+
+This application is now production-ready with robust error handling and session management.
+
+### Quick Production Setup
+
+1. **Environment Configuration:**
+   ```bash
+   # Copy the sample environment file
+   cp sample.env .env
+
+   # Edit .env with your actual Deepgram API key
+   nano .env  # or your preferred editor
+   ```
+
+2. **Environment Validation:**
+   ```bash
+   # Check if everything is configured correctly
+   python check_env.py
+   ```
+
+3. **Production Start:**
+   ```bash
+   # Use the production startup script
+   ./start_production.sh
+   ```
+
+### Troubleshooting Production Issues
+
+#### HTTP 401 Authentication Errors
+```
+server rejected WebSocket connection: HTTP 401
+```
+
+**Solution:**
+1. Verify your Deepgram API key is correct
+2. Check that your `.env` file is being loaded
+3. Ensure your API key has sufficient credits
+4. Get a new API key from https://console.deepgram.com/
+
+#### Gevent Blocking Errors
+```
+gevent.exceptions.BlockingSwitchOutError: Impossible to call blocking function in the event loop callback
+```
+
+**Solution:**
+- Use the updated code which is now gevent-compatible
+- The application automatically detects and handles gevent environments
+- Use the production startup script which handles this automatically
+
+#### Session Recovery
+- Previous conversations are automatically saved to the `sessions/` directory
+- Users can resume sessions after server restarts
+- Old sessions are automatically cleaned up after 24 hours
 
 ## Getting Started
 

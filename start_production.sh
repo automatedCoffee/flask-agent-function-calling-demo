@@ -53,6 +53,8 @@ if command -v gunicorn &> /dev/null; then
         --access-logfile - \
         --error-logfile - \
         --log-level info \
+        --daemon \
+        --pid /tmp/flask-agent.pid \
         client:app
 
 else

@@ -90,11 +90,13 @@ def _safe_sleep(seconds):
     """Sleep function that works with both threading and gevent"""
     try:
         if HAS_GEVENT:
+            # Use gevent's non-blocking sleep
+            import gevent
             gevent.sleep(seconds)
         else:
             time.sleep(seconds)
     except Exception as e:
-        logger.warning(f"Sleep interrupted: {e}")
+        logger.debug(f"Sleep interrupted (normal during shutdown): {e}")
 
 def _graceful_shutdown_handler(signum, frame):
     """Signal handler for graceful shutdown."""
@@ -112,8 +114,7 @@ def _graceful_shutdown_handler(signum, frame):
     # Clean up old sessions before shutdown
     cleanup_old_sessions()
 
-    # Allow some time for cleanup (gevent-compatible)
-    _safe_sleep(0.1)  # Much shorter sleep to avoid blocking
+    # Immediate exit without sleep to avoid gevent blocking
     os._exit(0)
 
 # Register signal handlers for graceful termination

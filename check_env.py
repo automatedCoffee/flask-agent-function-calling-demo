@@ -24,8 +24,27 @@ def check_environment():
         print("   2. Set it in your environment: export DEEPGRAM_API_KEY='your_key_here'")
         print("   3. Or add it to a .env file in the project root")
         return False
-    else:
-        print(f"✅ DEEPGRAM_API_KEY is set (starts with: {dg_key[:8]}...)")
+
+    # Check if it's a placeholder/fake key
+    placeholder_keys = [
+        "5335f29ad8d46d6b7d13594ea6c5444e26c4054a",  # Original placeholder
+        "your_deepgram_api_key_here",  # New placeholder from sample.env
+        "YOUR_REAL_DEEPGRAM_API_KEY_HERE"  # Another placeholder variant
+    ]
+
+    if any(placeholder.lower() in dg_key.lower() for placeholder in placeholder_keys):
+        print("❌ DEEPGRAM_API_KEY appears to be a PLACEHOLDER!")
+        print("   You need to replace it with a REAL API key from Deepgram")
+        print("   🔑 STEP-BY-STEP:")
+        print("   1. Go to https://console.deepgram.com/")
+        print("   2. Sign up for a free account (or log in)")
+        print("   3. Go to 'API Keys' section")
+        print("   4. Create a new API key")
+        print("   5. Copy the API key and replace the placeholder in your .env file")
+        print("   6. The real key should be much longer and look like a secure token")
+        return False
+
+    print(f"✅ DEEPGRAM_API_KEY is set (starts with: {dg_key[:8]}...)")
 
     # Validate API key format
     if len(dg_key.strip()) < 10:
