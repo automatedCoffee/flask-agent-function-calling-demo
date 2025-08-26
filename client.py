@@ -9,6 +9,13 @@ import requests
 import random
 import time
 from dotenv import load_dotenv
+
+# Try to import gevent for compatibility, fallback gracefully
+try:
+    import gevent
+    HAS_GEVENT = True
+except ImportError:
+    HAS_GEVENT = False
 from common.agent_functions import FUNCTION_MAP
 from common.agent_templates import AgentTemplates
 import logging
@@ -79,6 +86,16 @@ def cleanup_old_sessions(max_age_hours=24):
     except Exception as e:
         logger.warning(f"Error during session cleanup: {e}")
 
+def _safe_sleep(seconds):
+    """Sleep function that works with both threading and gevent"""
+    try:
+        if HAS_GEVENT:
+            gevent.sleep(seconds)
+        else:
+            time.sleep(seconds)
+    except Exception as e:
+        logger.warning(f"Sleep interrupted: {e}")
+
 def _graceful_shutdown_handler(signum, frame):
     """Signal handler for graceful shutdown."""
     logger.info("Shutdown signal received. Cleaning up...")
@@ -95,8 +112,8 @@ def _graceful_shutdown_handler(signum, frame):
     # Clean up old sessions before shutdown
     cleanup_old_sessions()
 
-    # Allow some time for cleanup
-    time.sleep(1)
+    # Allow some time for cleanup (gevent-compatible)
+    _safe_sleep(0.1)  # Much shorter sleep to avoid blocking
     os._exit(0)
 
 # Register signal handlers for graceful termination
@@ -404,7 +421,16 @@ class VoiceAgent:
         api_key = os.environ.get("DEEPGRAM_API_KEY")
         if not api_key:
             logger.error("DEEPGRAM_API_KEY environment variable not set.")
+            logger.error("Please set your Deepgram API key in the environment or .env file")
+            logger.error("Get your API key from: https://console.deepgram.com/")
             return None
+
+        # Validate API key format (basic check)
+        if len(api_key.strip()) < 10:
+            logger.error("DEEPGRAM_API_KEY appears to be invalid (too short)")
+            return None
+
+        logger.info(f"Using Deepgram API key: {api_key[:8]}...")
 
         while self.is_running and not _shutdown_event.is_set() and self.connection_attempts < self.max_connection_attempts:
             try:
@@ -424,6 +450,34 @@ class VoiceAgent:
                 self.last_connection_error = None
                 self.save_state()
                 return self.dg_client
+
+            except websockets.exceptions.InvalidStatusCode as e:
+                self.connection_attempts += 1
+                self.last_connection_error = e
+                self.is_connected = False
+                self.save_state()
+
+                if e.status_code == 401:
+                    logger.error("❌ Deepgram authentication failed (HTTP 401)")
+                    logger.error("Please check your DEEPGRAM_API_KEY environment variable")
+                    logger.error("1. Make sure you've set the correct API key")
+                    logger.error("2. Check that your API key is active and has sufficient credits")
+                    logger.error("3. Verify your .env file is being loaded properly")
+                    return None  # Don't retry on auth errors
+                else:
+                    logger.warning(f"WebSocket connection failed with status {e.status_code}: {e}")
+
+                if self.connection_attempts >= self.max_connection_attempts:
+                    logger.error(f"Failed to connect after {self.max_connection_attempts} attempts")
+                    return None
+
+                # Exponential backoff with jitter
+                delay = min(self.reconnect_delay * (2 ** (self.connection_attempts - 1)), self.max_reconnect_delay)
+                jitter = delay * 0.1 * (2 * random.random() - 1)  # ±10% jitter
+                actual_delay = delay + jitter
+
+                logger.info(f"Retrying in {actual_delay:.1f} seconds...")
+                await asyncio.sleep(actual_delay)
 
             except Exception as e:
                 self.connection_attempts += 1
