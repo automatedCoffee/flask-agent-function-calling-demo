@@ -14,6 +14,8 @@ document.addEventListener("DOMContentLoaded", () => {
         isAgentSpeaking: false,
         isAgentProcessing: false,
         isConnecting: false,
+        currentSessionId: null,
+        availableSessions: []
     };
 
     /**
@@ -36,7 +38,7 @@ document.addEventListener("DOMContentLoaded", () => {
     /**
      * Establishes a WebSocket connection and sets up all event handlers.
      */
-    function connectSocket() {
+    function connectSocket(resumeSessionId = null) {
         if (session.isConnecting || (session.socket && session.socket.connected)) {
             logMessage('📡 Connection attempt blocked: already connecting or connected.', 'warn');
             return;
@@ -44,7 +46,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         session.isConnecting = true;
         logMessage('📡 Connecting to socket...');
-        
+
         session.socket = io({
             transports: ['websocket'],
             upgrade: true,
@@ -56,7 +58,18 @@ document.addEventListener("DOMContentLoaded", () => {
             session.isConnecting = false;
             logMessage('📡 Socket connected successfully.');
             setStatus('Connected, starting agent...');
-            session.socket.emit('start_voice_agent', { voiceModel: voiceModelSelect.value });
+
+            // Send session data for potential recovery
+            const startData = {
+                voiceModel: voiceModelSelect.value
+            };
+
+            if (resumeSessionId) {
+                startData.session_id = resumeSessionId;
+                logMessage(`🔄 Resuming session: ${resumeSessionId}`);
+            }
+
+            session.socket.emit('start_voice_agent', startData);
         });
 
         session.socket.on('disconnect', (reason) => {
@@ -111,6 +124,73 @@ document.addEventListener("DOMContentLoaded", () => {
             // The audio module handles the queuing and playback
             addAudioToQueue(new Uint8Array(chunk), logMessage);
         });
+
+        session.socket.on('session_started', (data) => {
+            session.currentSessionId = data.session_id;
+            logMessage(`📝 Session started: ${data.session_id} (messages: ${data.message_count})`);
+        });
+
+        session.socket.on('connection_status', (data) => {
+            const status = data.connected ? '🟢 Connected' : '🔴 Disconnected';
+            logMessage(`📊 ${status} - Session: ${data.session_id || 'None'} (${data.message_count || 0} messages)`);
+            if (data.last_error) {
+                logMessage(`⚠️ Connection error: ${data.last_error}`, 'warn');
+            }
+        });
+    }
+
+    // --- Session Management Functions ---
+
+    async function loadAvailableSessions() {
+        try {
+            const response = await fetch('/sessions');
+            const data = await response.json();
+            session.availableSessions = data.sessions || [];
+            return session.availableSessions;
+        } catch (error) {
+            logMessage(`Failed to load sessions: ${error}`, 'error');
+            return [];
+        }
+    }
+
+    function showSessionRecovery(sessions) {
+        const recoveryDiv = document.getElementById('sessionRecovery');
+        const sessionListDiv = document.getElementById('sessionList');
+
+        if (sessions.length === 0) {
+            recoveryDiv.style.display = 'none';
+            return;
+        }
+
+        sessionListDiv.innerHTML = '';
+        sessions.forEach(sess => {
+            const sessionItem = document.createElement('div');
+            sessionItem.className = 'session-item';
+            sessionItem.dataset.sessionId = sess.session_id;
+
+            const lastUpdated = new Date(sess.last_updated * 1000).toLocaleString();
+            sessionItem.innerHTML = `
+                <div><strong>${sess.industry} - ${sess.voiceModel}</strong></div>
+                <div class="session-info">
+                    Messages: ${sess.message_count} | Updated: ${lastUpdated}
+                </div>
+            `;
+
+            sessionItem.addEventListener('click', () => {
+                document.querySelectorAll('.session-item').forEach(item => {
+                    item.classList.remove('selected');
+                });
+                sessionItem.classList.add('selected');
+            });
+
+            sessionListDiv.appendChild(sessionItem);
+        });
+
+        recoveryDiv.style.display = 'block';
+    }
+
+    function hideSessionRecovery() {
+        document.getElementById('sessionRecovery').style.display = 'none';
     }
 
     // --- Speaking Logic (User Input) ---
@@ -145,12 +225,21 @@ document.addEventListener("DOMContentLoaded", () => {
     
     // --- Session Management ---
 
-    async function startSession() {
+    async function startSession(resumeSessionId = null) {
         if (session.isActive) return;
 
         logMessage('Session starting...');
         setStatus('Initializing...');
-        
+
+        // Check for available sessions if not resuming a specific one
+        if (!resumeSessionId) {
+            const availableSessions = await loadAvailableSessions();
+            if (availableSessions.length > 0) {
+                showSessionRecovery(availableSessions);
+                return; // Wait for user to choose
+            }
+        }
+
         const audioStarted = await startAudio(
             () => session.socket,
             logMessage,
@@ -162,7 +251,7 @@ document.addEventListener("DOMContentLoaded", () => {
             session.isActive = true;
             startButton.textContent = 'Stop Voice Agent';
             updateSpeakButtonState(session, logMessage); // Initial state should be disabled
-            connectSocket();
+            connectSocket(resumeSessionId);
         } else {
             setStatus('Error starting audio.');
             logMessage('Failed to initialize audio, session aborted.', 'error');
@@ -207,6 +296,39 @@ document.addEventListener("DOMContentLoaded", () => {
             stopSession();
         } else {
             startSession();
+        }
+    });
+
+    // Session recovery event handlers
+    document.getElementById('resumeSessionBtn').addEventListener('click', () => {
+        const selectedSession = document.querySelector('.session-item.selected');
+        if (selectedSession) {
+            const sessionId = selectedSession.dataset.sessionId;
+            hideSessionRecovery();
+            startSession(sessionId);
+        } else {
+            logMessage('Please select a session to resume.', 'warn');
+        }
+    });
+
+    document.getElementById('newSessionBtn').addEventListener('click', async () => {
+        hideSessionRecovery();
+        // Force start a new session by passing null explicitly
+        const audioStarted = await startAudio(
+            () => session.socket,
+            logMessage,
+            () => session.isMuted,
+            () => session.isAgentSpeaking
+        );
+
+        if (audioStarted) {
+            session.isActive = true;
+            startButton.textContent = 'Stop Voice Agent';
+            updateSpeakButtonState(session, logMessage);
+            connectSocket(null); // Explicitly pass null for new session
+        } else {
+            setStatus('Error starting audio.');
+            logMessage('Failed to initialize audio, session aborted.', 'error');
         }
     });
 

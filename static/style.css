@@ -327,6 +327,7 @@ body:not(.dark-mode) .timeline-item.log-message {
     display: flex;
     align-items: center;
     cursor: pointer;
+    -webkit-user-select: none;
     user-select: none;
 }
 
@@ -664,6 +665,7 @@ body:not(.dark-mode) .industry-item {
     display: flex;
     align-items: center;
     justify-content: center;
+    -webkit-user-select: none;
     user-select: none;
     outline: none;
     pointer-events: auto; /* Ensure button can be clicked */
@@ -704,4 +706,105 @@ body:not(.dark-mode) .industry-item {
 .speak-button-text {
     text-align: center;
     line-height: 1.2;
+}
+
+/* Session Recovery Styles */
+.session-recovery {
+    margin: 15px 0;
+    padding: 15px;
+    border: 1px solid var(--border-color-light);
+    border-radius: 8px;
+    background-color: var(--item-bg-light);
+}
+
+body.dark-mode .session-recovery {
+    border-color: var(--border-color-dark);
+    background-color: var(--item-bg-dark);
+}
+
+.session-recovery h4 {
+    margin: 0 0 10px 0;
+    font-size: 14px;
+    font-weight: bold;
+}
+
+.session-list {
+    max-height: 150px;
+    overflow-y: auto;
+    margin: 10px 0;
+}
+
+.session-item {
+    padding: 8px 12px;
+    margin: 5px 0;
+    border: 1px solid var(--border-color-light);
+    border-radius: 4px;
+    background-color: var(--column-bg-light);
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+body.dark-mode .session-item {
+    border-color: var(--border-color-dark);
+    background-color: var(--column-bg-dark);
+}
+
+.session-item:hover {
+    background-color: var(--item-bg-light);
+}
+
+body.dark-mode .session-item:hover {
+    background-color: var(--item-bg-dark);
+}
+
+.session-item.selected {
+    background-color: #007bff;
+    color: white;
+}
+
+.session-item .session-info {
+    font-size: 12px;
+    color: var(--text-color-light);
+}
+
+body.dark-mode .session-item .session-info {
+    color: var(--text-color-dark);
+}
+
+.session-item.selected .session-info {
+    color: #e0e0e0;
+}
+
+.session-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.resume-btn, .new-session-btn {
+    flex: 1;
+    padding: 8px 12px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background-color 0.2s;
+}
+
+.resume-btn {
+    background-color: #28a745;
+    color: white;
+}
+
+.resume-btn:hover {
+    background-color: #218838;
+}
+
+.new-session-btn {
+    background-color: #007bff;
+    color: white;
+}
+
+.new-session-btn:hover {
+    background-color: #0056b3;
 }

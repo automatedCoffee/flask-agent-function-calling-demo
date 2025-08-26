@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -12,6 +12,17 @@
         <div class="sidebar">
             <button id="startButton" class="mic-button">Start Voice Agent</button>
             <div id="status" class="status">Status: Inactive</div>
+
+            <!-- Session Recovery Section -->
+            <div class="session-recovery" id="sessionRecovery" style="display: none;">
+                <h4>Resume Previous Session?</h4>
+                <div id="sessionList" class="session-list"></div>
+                <div class="session-actions">
+                    <button id="resumeSessionBtn" class="resume-btn">Resume</button>
+                    <button id="newSessionBtn" class="new-session-btn">Start New</button>
+                </div>
+            </div>
+
             <div class="audio-controls">
                 <div class="device-select">
                     <label for="voiceModel">Voice Model:</label>

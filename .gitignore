@@ -1,45 +1,28 @@
-*.py[cod]
-.cache-*
-.DS_Store
-
-# C extensions
-*.so
-
-# Environments
-.env
-.venv
+sessions/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
 env/
 venv/
-
-# Packages
-*.egg
-*.egg-info
-dist
-build
-eggs
-parts
-bin
-var
-sdist
-develop-eggs
-.installed.cfg
-lib
-lib64
-__pycache__/
-
-# Installer logs
+.venv/
 pip-log.txt
-
-# Unit test / coverage reports
+pip-delete-this-directory.txt
+.tox/
 .coverage
-.tox
+.coverage.*
+.cache
 nosetests.xml
-
-# Translations
-*.mo
-requirements_PA.txt
-app.db
-
-# Misc
-mock_data_outputs/
-misc/
+coverage.xml
+*.cover
+*.log
+.git
+.mypy_cache
+.pytest_cache
+.hypothesis
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
